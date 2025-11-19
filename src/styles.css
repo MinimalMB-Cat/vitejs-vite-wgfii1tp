@@ -86,7 +86,7 @@ body {
   text-align: center;
   line-height: 1.08;
   /* Dynamische Schriftgröße passend zur Zellgröße */
-  font-size: clamp(11px, calc(var(--cell) * 0.18), 16px);
+  font-size: clamp(11px, calc(var(--cell) * 0.18), 13px);
   word-break: break-word;
   hyphens: auto;
 }
