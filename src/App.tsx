@@ -682,7 +682,7 @@ export default function App() {
                     <button className="btn" onClick={() => setStartStage(4)}>START</button>
                   </div>
                   <div style={{position:'absolute', right:10, top:'calc(50% + 36px)', opacity:.9}}>
-                    Kannst du überhaupt BUTTONS drücken? 🧌
+                    kannst du überhaupt BUTTONS drücken? 🧌
                   </div>
                 </>
               )}
