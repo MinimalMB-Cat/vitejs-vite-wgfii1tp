@@ -734,6 +734,12 @@ export default function App() {
     return arr;
   }, [grid]);
 
+  // Lösungswort als String für das Win-Modal
+  const solutionWord = useMemo(() => {
+    return solutionSlots.length ? solutionSlots.join('') : '';
+  }, [solutionSlots]);
+
+
   // --- Settings Modal State ---
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('file');
@@ -1430,6 +1436,11 @@ export default function App() {
             <p style={{ opacity:.9, marginTop:8, textAlign:'center' }}>
               Benötigte Zeit: <strong>{formatTime(winTimeMs ?? elapsedMs)}</strong>
             </p>
+              {solutionWord && (
+                <p style={{ opacity:.9, marginTop:8, textAlign:'center' }}>
+                  Lösungswort: <strong style={{ letterSpacing: '0.06em' }}>{solutionWord}</strong>
+                </p>
+              )}
             <div className="actions" style={{justifyContent:'center', marginTop:16}}>
               <button className="btn" onClick={() => setShowWin(false)}>Schließen</button>
             </div>
