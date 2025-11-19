@@ -201,7 +201,6 @@ export default function App() {
       '/sounds/backgroundmusic/lofi/lofi_1.mp3',
       '/sounds/backgroundmusic/lofi/lofi_2.mp3',
       '/sounds/backgroundmusic/lofi/lofi_3.mp3',
-      '/sounds/backgroundmusic/lofi/Musik_loop.mp3',
     ],
     rock: [
       '/sounds/backgroundmusic/rock/rock_1.mp3',
