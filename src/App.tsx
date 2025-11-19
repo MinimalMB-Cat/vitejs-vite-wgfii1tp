@@ -61,6 +61,21 @@ function normalizeAnswer(s: string) {
   return s?.trim().toUpperCase().replace(/[^A-ZÄÖÜß]/g, '') || '';
 }
 
+// --- Draft-Persistenz (localStorage) ---
+const DRAFT_KEY = 'schwedenraetsel_draft_v1';
+function saveDraft(payload: unknown) {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(payload)); } catch {}
+}
+function loadDraft<T>(): T | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch { return null; }
+}
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
+}
+
 // --- Build segments from clues ---
 function buildSegments(grid: Cell[][]): Segment[] {
   const segs: Segment[] = [];
@@ -165,7 +180,7 @@ export default function App() {
 
   // Start-/Win-Popups
   const [showStart, setShowStart] = useState(false);
-  const [startStage, setStartStage] = useState<number>(0);  // 0..4 (4 = final klick startet)
+  const [startStage, setStartStage] = useState<number>(0);  // 0..4
   const [showWin, setShowWin] = useState(false);
 
   const prevAllCorrect = useRef(false);
@@ -189,7 +204,7 @@ export default function App() {
   const [modal, setModal] = useState<{ open: boolean; r: number; c: number; text: string; variant: Variant; answer: string; }>
     ({ open: false, r: 0, c: 0, text: '', variant: 'LEFT_CLUE_RIGHT', answer: '' });
 
-  // URL-Hash laden
+  // URL-Hash laden ODER lokalen Entwurf wiederherstellen
   useEffect(() => {
     const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
     const params = new URLSearchParams(raw);
@@ -209,6 +224,23 @@ export default function App() {
       // Timer & Startdialog zurücksetzen
       setTimerRunning(false); setTimerStart(null); setElapsedMs(0);
       setShowStart(true); setStartStage(0);
+      return;
+    }
+
+    // Fallback: lokalen Entwurf laden (nur wenn KEIN #p=…)
+    const draft = loadDraft<{ grid: Cell[][]; solutionNext: number }>();
+    if (draft?.grid?.length) {
+      const g = draft.grid.map(row =>
+        row.map(cell => ({
+          type: cell.type, clue: cell.clue, letter: cell.letter ?? '',
+          solutionIndex: cell.solutionIndex ?? null, expected: null,
+        }))
+      );
+      setGrid(g);
+      setSolutionNext(draft.solutionNext ?? 1);
+      setMode('edit');
+      setLocked(false);
+      setTimeout(() => setGrid(g2 => mapExpected(g2)), 0);
     }
   }, []);
 
@@ -307,7 +339,7 @@ export default function App() {
     if (allCorrect && !prevAllCorrect.current) {
       setTimerRunning(false);
       setWinTimeMs(elapsedMs);
-      setActiveSeg(null);          // Markierung entfernen (verhindert Overlay über Modal)
+      setActiveSeg(null);
       setShowWin(true);
     }
     prevAllCorrect.current = allCorrect;
@@ -362,6 +394,15 @@ export default function App() {
     pairs.forEach(p => (arr[p.idx - 1] = p.ch || ''));
     return arr;
   }, [grid]);
+
+  // --- Auto-Save des Entwurfs im Editor (debounced) ---
+  useEffect(() => {
+    if (mode !== 'edit' || locked) return;
+    const id = setTimeout(() => {
+      saveDraft({ grid, solutionNext });
+    }, 300);
+    return () => clearTimeout(id);
+  }, [grid, solutionNext, mode, locked]);
 
   // Events
   function onCellClick(r: number, c: number) {
@@ -437,6 +478,7 @@ export default function App() {
     history.replaceState(null, '', ' ');
     setTimerRunning(false); setTimerStart(null); setElapsedMs(0);
     setShowWin(false); setWinTimeMs(null); setShowStart(false); setStartStage(0);
+    clearDraft(); // Entwurf mit löschen
   }
 
   function onResetSolutionNumbers() {
@@ -513,7 +555,13 @@ export default function App() {
             <>
               <button className="btn" onClick={onCopySolveOnly}>Teilen (Nur Lösen)</button>
               <button className="btn" onClick={onCopyLink}>Link kopieren</button>
-              <button className="btn danger" onClick={onClearAll}>Alles löschen</button>
+              <button className="btn" onClick={onClearAll}>Alles löschen</button>
+              {/* optional: Entwurf explizit löschen */}
+              {mode === 'edit' && (
+                <button className="btn" onClick={() => { clearDraft(); alert('Lokaler Entwurf gelöscht.'); }}>
+                  Entwurf löschen
+                </button>
+              )}
             </>
           ) : null}
         </div>
