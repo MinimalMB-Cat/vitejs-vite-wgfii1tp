@@ -66,15 +66,21 @@ function normalizeAnswer(s: string) {
 // --- Build segments from clues ---
 function buildSegments(grid: Cell[][]): Segment[] {
   const segs: Segment[] = [];
+
   for (let r = 0; r < N; r++) {
     for (let c = 0; c < N; c++) {
       const cell = grid[r][c];
       if (cell.type !== 'clue' || !cell.clue) continue;
       const clue = cell.clue;
 
-      let start: { r: number; c: number };
-      let dir: Dir;
+      // Defaults (verhindert TS2454)
+      let start: { r: number; c: number } = { r, c };
+      let dir: Dir = 'RIGHT';
 
+      // Falls alte gespeicherte Daten kein variant haben
+      const variant: Variant = (clue.variant ?? 'LEFT_CLUE_RIGHT') as Variant;
+
+      // Start & Richtung abhängig von der Variante
       switch (variant) {
         case 'LEFT_CLUE_RIGHT':
           start = { r, c: c + 1 };
@@ -97,12 +103,11 @@ function buildSegments(grid: Cell[][]): Segment[] {
           break;
 
         default:
-          // Fallback (sollte nie passieren, schützt aber vor alten/kaputten Daten)
+          // Fallback
           start = { r, c: c + 1 };
           dir = 'RIGHT';
           break;
       }
-
 
       const cells: { r: number; c: number }[] = [];
       let cur = { ...start };
@@ -114,6 +119,7 @@ function buildSegments(grid: Cell[][]): Segment[] {
         if (grid[nxt.r][nxt.c].type === 'clue') break;
         cur = nxt;
       }
+
       segs.push({ id: `${r}-${c}`, cluePos: { r, c }, dir, start, cells, clue });
     }
   }
