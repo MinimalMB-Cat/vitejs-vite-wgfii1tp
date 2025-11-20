@@ -75,16 +75,32 @@ function buildSegments(grid: Cell[][]): Segment[] {
       let start: { r: number; c: number };
       let dir: Dir;
 
-      if (clue.variant === 'LEFT_CLUE_RIGHT') {
-        start = { r, c: c + 1 }; dir = 'RIGHT';
-      } else if (clue.variant === 'ABOVE_CLUE_DOWN') {
-        start = { r: r + 1, c }; dir = 'DOWN';
-      } else if (clue.variant === 'LEFT_CLUE_DOWN') {
-        start = { r, c: c + 1 }; dir = 'DOWN';
-      } else if (clue.variant === 'ABOVE_CLUE_RIGHT') {
-        start = { r: r + 1, c }; dir = 'RIGHT';
-      } else if (clue.variant === 'RIGHT_CLUE_DOWN') {       // <— NEU
-        start = { r, c: c - 1 }; dir = 'DOWN';               // Start links vom Hinweis
+      switch (variant) {
+        case 'LEFT_CLUE_RIGHT':
+          start = { r, c: c + 1 };
+          dir = 'RIGHT';
+          break;
+
+        case 'ABOVE_CLUE_DOWN':
+          start = { r: r + 1, c };
+          dir = 'DOWN';
+          break;
+
+        case 'LEFT_CLUE_DOWN':
+          start = { r, c: c + 1 };
+          dir = 'DOWN';
+          break;
+
+        case 'ABOVE_CLUE_RIGHT':
+          start = { r: r + 1, c };
+          dir = 'RIGHT';
+          break;
+
+        default:
+          // Fallback (sollte nie passieren, schützt aber vor alten/kaputten Daten)
+          start = { r, c: c + 1 };
+          dir = 'RIGHT';
+          break;
       }
 
 
