@@ -201,6 +201,7 @@ export default function App() {
       '/sounds/backgroundmusic/lofi/lofi_1.mp3',
       '/sounds/backgroundmusic/lofi/lofi_2.mp3',
       '/sounds/backgroundmusic/lofi/lofi_3.mp3',
+      '/sounds/backgroundmusic/lofi/Musik_loop.mp3',
     ],
     rock: [
       '/sounds/backgroundmusic/rock/rock_1.mp3',
@@ -614,8 +615,15 @@ export default function App() {
   // Segmente / Mappings
   const segments = useMemo(() => buildSegments(grid), [grid]);
   const arrowStarts = useMemo(() => {
-    const m = new Map<string, Dir>(); segments.forEach(s => m.set(`${s.start.r}-${s.start.c}`, s.dir)); return m;
+    const m = new Map<string, Set<Dir>>();
+    for (const s of segments) {
+      const k = `${s.start.r}-${s.start.c}`;
+      if (!m.has(k)) m.set(k, new Set<Dir>());
+      m.get(k)!.add(s.dir);
+    }
+    return m;
   }, [segments]);
+  
   const segmentByCell = useMemo(() => {
     const m = new Map<string, Segment>();
     for (const s of segments) for (const pos of s.cells) m.set(`${pos.r}-${pos.c}`, s);
@@ -733,7 +741,6 @@ export default function App() {
     pairs.forEach(p => (arr[p.idx - 1] = p.ch || ''));
     return arr;
   }, [grid]);
-
   // Lösungswort als String für das Win-Modal
   const solutionWord = useMemo(() => {
     return solutionSlots.length ? solutionSlots.join('') : '';
@@ -1065,7 +1072,34 @@ export default function App() {
           background:#0f141b; border:1px solid #2a3442; color:#e5e7eb;
           padding:6px 10px; border-radius:8px; cursor:pointer;
         }
-        .iconBtn:hover{ background:#1a2331; border-color:#3a4a62; }        
+        .iconBtn:hover{ background:#1a2331; border-color:#3a4a62; }
+        
+        /* Zellen sind Anker */
+        .grid .cell { position: relative; }
+        
+        /* gemeinsame Basis */
+        .arrow {
+          position: absolute;
+          width: 0; height: 0;
+          pointer-events: none;
+        }
+        
+        /* ► oben-links */
+        .arrow.right {
+          top: 4px; left: 4px;
+          border-top: 7px solid transparent;
+          border-bottom: 7px solid transparent;
+          border-left: 12px solid #fff;
+        }
+        
+        /* ▼ oben-rechts */
+        .arrow.down {
+          top: 4px; right: 4px; left: auto; /* wichtig: left zurücksetzen */
+          border-left: 7px solid transparent;
+          border-right: 7px solid transparent;
+          border-top: 12px solid #fff;
+        }
+        
       `}</style>
 
       {showWin && <ConfettiCanvas />}
@@ -1179,7 +1213,7 @@ export default function App() {
                   isFlashing ? 'flash-correct' : ''
                 ].filter(Boolean).join(' ');
 
-                const startDir = arrowStarts.get(`${r}-${c}`);
+                const startDirs = arrowStarts.get(`${r}-${c}`);
 
                 return (
                   <div className={classNames} key={`${r}-${c}`} onClick={() => onCellClick(r, c)}>
@@ -1187,8 +1221,8 @@ export default function App() {
                       <div className="clueText">{hideClues ? '' : cell.clue.text}</div>
                     )}
                     {cell.type === 'empty' && (cell.letter ?? '')}
-                    {startDir === 'RIGHT' && <div className="arrow right" />}
-                    {startDir === 'DOWN'  && <div className="arrow down"  />}
+                    {startDirs?.has('RIGHT') && <div className="arrow right" />}
+                    {startDirs?.has('DOWN')  && <div className="arrow down"  />}
                     {cell.solutionIndex ? <div className="mini">{cell.solutionIndex}</div> : null}
                   </div>
                 );
@@ -1302,7 +1336,7 @@ export default function App() {
                     <button className="btn" onClick={() => setStartStage(4)}>START</button>
                   </div>
                   <div style={{position:'absolute', right:10, top:'calc(50% + 36px)', opacity:.9}}>
-                    Kannst du überhaupt BUTTONS drücken?🧌
+                    kannst du überhaupt BUTTONS drücken? 🧌
                   </div>
                 </>
               )}
@@ -1436,11 +1470,11 @@ export default function App() {
             <p style={{ opacity:.9, marginTop:8, textAlign:'center' }}>
               Benötigte Zeit: <strong>{formatTime(winTimeMs ?? elapsedMs)}</strong>
             </p>
-              {solutionWord && (
-                <p style={{ opacity:.9, marginTop:8, textAlign:'center' }}>
-                  Lösungswort: <strong style={{ letterSpacing: '0.06em' }}>{solutionWord}</strong>
-                </p>
-              )}
+            {solutionWord && (
+              <p style={{ opacity:.9, marginTop:8, textAlign:'center' }}>
+                Lösungswort: <strong style={{ letterSpacing: '0.06em' }}>{solutionWord}</strong>
+              </p>
+            )}
             <div className="actions" style={{justifyContent:'center', marginTop:16}}>
               <button className="btn" onClick={() => setShowWin(false)}>Schließen</button>
             </div>
