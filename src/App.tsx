@@ -302,6 +302,22 @@ export default function App() {
     return arr[idx];
   }, [playlist, trackIdx]);
 
+  const startBgMusic = () => {
+    const a = musicAudioRef.current;
+    if (!a || soundMuted) return;
+  
+    // Falls noch kein Track geladen ist, jetzt setzen
+    if (!a.src && currentTrack) {
+      a.src = currentTrack;
+      a.currentTime = 0;
+      a.load();
+    }
+  
+    void a.play().catch(() => {
+    });
+  };
+  
+
   // Audios anlegen
   useEffect(() => {
     const click = new Audio(CLICK_URL);
@@ -343,17 +359,10 @@ export default function App() {
     music.addEventListener('play',  onPlay);
     music.addEventListener('pause', onPause);
 
-    const startMusicOnce = () => {
-      if (!soundMuted) void music.play().catch(() => {});
-      window.removeEventListener('pointerdown', startMusicOnce);
-    };
-    window.addEventListener('pointerdown', startMusicOnce, { once: true });
-
     return () => {
       music.removeEventListener('ended', onEnded);
       music.removeEventListener('play',  onPlay);
       music.removeEventListener('pause', onPause);
-      window.removeEventListener('pointerdown', startMusicOnce);
       if (fadeRafRef.current) cancelAnimationFrame(fadeRafRef.current);
 
       clickAudioRef.current = null;
@@ -1343,11 +1352,20 @@ export default function App() {
             </p>
 
             <div className="startArea" style={{ position:'relative', marginTop:12, height: 220, borderRadius: 10 }}>
-              {startStage === 0 && preCount === null && (
-                <div style={{position:'absolute', left:'50%', transform:'translateX(-50%)', bottom:10, textAlign:'center'}}>
-                  <button className="btn" onClick={() => setStartStage(1)}>START</button>
-                </div>
-              )}
+            {startStage === 0 && preCount === null && (
+              <div style={{position:'absolute', left:'50%', transform:'translateX(-50%)', bottom:10, textAlign:'center'}}>
+                <button
+                  className="btn"
+                  onClick={() => {
+                    startBgMusic();
+                    setStartStage(1);
+                  }}
+                >
+                  START
+                </button>
+              </div>
+            )}
+
               {startStage === 1 && preCount === null && (
                 <>
                   <div style={{position:'absolute', right:8, top:8}}>
