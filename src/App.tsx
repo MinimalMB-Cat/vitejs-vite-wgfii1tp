@@ -1028,7 +1028,7 @@ export default function App() {
     setIncorrectCells(new Set());
     try { localStorage.removeItem(LS_LOCK_KEY); } catch {}
   }
-
+  
   function onResetSolutionNumbers() {
     setGrid(g => {
       const g2 = cloneGrid(g);
