@@ -36,6 +36,7 @@ type Segment = {
 
 const N = 12;
 const LS_KEY = 'schwedenraetsel_v1';
+const LS_LOCK_KEY = 'schwedenraetsel_v1_lock';
 
 // --- Utils ---
 const emptyGrid = (): Cell[][] =>
@@ -209,6 +210,11 @@ export default function App() {
   // Flashing
   const [flashingSegs, setFlashingSegs] = useState<Set<string>>(new Set());
   const prevSolvedRef = useRef<Set<string>>(new Set());
+  
+  // dauerhaft falsch markierte Zellen (bis geändert/gelöscht)
+  const [incorrectCells, setIncorrectCells] = useState<Set<string>>(
+    () => new Set()
+  );  
 
   // File input
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -576,43 +582,78 @@ export default function App() {
     const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
     const params = new URLSearchParams(raw);
     const p = params.get('p');
-    const isLocked = params.get('lock') === '1';
-
+    const isLockedFromUrl = params.get('lock') === '1';
+  
     if (p) {
       const payload = decodePayload<{ grid: Cell[][] }>(p);
       const g = payload.grid.map(row =>
         row.map(cell => ({
-          type: cell.type, clue: cell.clue, letter: cell.letter ?? '',
-          solutionIndex: cell.solutionIndex ?? null, expected: null,
+          type: cell.type,
+          clue: cell.clue,
+          letter: cell.letter ?? '',
+          solutionIndex: cell.solutionIndex ?? null,
+          expected: null,
         }))
       );
+  
       setGrid(g);
-      setLocked(isLocked);
-      setMode(isLocked ? 'play' : 'edit');
-      setShowWin(false); setWinTimeMs(null);
+      setLocked(isLockedFromUrl);
+      setMode(isLockedFromUrl ? 'play' : 'edit');
+      setShowWin(false);
+      setWinTimeMs(null);
+      setTimerRunning(false);
+      setTimerStart(null);
+      setElapsedMs(0);
+  
       setTimeout(() => setGrid(g2 => mapExpected(g2)), 0);
-
-      // Timer / Start je nach Modus
-      setTimerRunning(false); setTimerStart(null); setElapsedMs(0);
-      if (isLocked) { setShowStart(true); setStartStage(0); } else { setShowStart(false); setStartStage(0); }
-
+  
+      // 🔒 Lock-Status auch im localStorage merken
+      try {
+        if (isLockedFromUrl) {
+          localStorage.setItem(LS_LOCK_KEY, '1');
+        } else {
+          localStorage.removeItem(LS_LOCK_KEY);
+        }
+      } catch {
+        // ignorieren
+      }
+  
       // Edit-Link -> Hash entfernen
-      if (!isLocked) history.replaceState(null, '', location.pathname);
+      if (!isLockedFromUrl) {
+        history.replaceState(null, '', location.pathname);
+      }
     } else {
+      // Prüfen, ob wir aus der Vergangenheit wissen,
+      // dass dieses Rätsel "nur lösen" sein soll.
+      let forceLock = false;
+      try {
+        forceLock = localStorage.getItem(LS_LOCK_KEY) === '1';
+      } catch {
+        forceLock = false;
+      }
+  
       // Entwurf aus localStorage
       try {
         const rawLs = localStorage.getItem(LS_KEY);
         if (rawLs) {
           const saved = JSON.parse(rawLs) as { grid: Cell[][] };
           if (saved?.grid?.length === N) {
-            const g = saved.grid.map(row =>
+            const g: Cell[][] = saved.grid.map(row =>
               row.map(cell => ({
-                type: cell.type, clue: cell.clue, letter: cell.letter ?? '',
-                solutionIndex: cell.solutionIndex ?? null, expected: null,
+                type: cell.type,
+                clue: cell.clue,
+                letter: cell.letter ?? '',
+                solutionIndex: cell.solutionIndex ?? null,
+                expected: null,
               }))
             );
             setGrid(g);
             setTimeout(() => setGrid(g2 => mapExpected(g2)), 0);
+            setIncorrectCells(new Set());
+  
+            // ⬅️ hier Lock erzwingen, falls nötig
+            setLocked(forceLock);
+            setMode(forceLock ? 'play' : 'edit');
           }
         }
       } catch (e) {
@@ -620,6 +661,7 @@ export default function App() {
       }
     }
   }, []);
+  
 
   // ===== Debounced Autosave (nur wenn NICHT locked) =====
   useEffect(() => {
@@ -659,21 +701,90 @@ export default function App() {
     }
     return m;
   }, [segments]);
-  
-  const segmentByCell = useMemo(() => {
-    const m = new Map<string, Segment>();
-    for (const s of segments) for (const pos of s.cells) m.set(`${pos.r}-${pos.c}`, s);
+
+  const segmentsByCell = useMemo(() => {
+    const m = new Map<string, Segment[]>();
+    for (const s of segments) {
+      for (const pos of s.cells) {
+        const key = `${pos.r}-${pos.c}`;
+        const arr = m.get(key);
+        if (arr) arr.push(s);
+        else m.set(key, [s]);
+      }
+    }
     return m;
   }, [segments]);
-  const completedSegIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const s of segments) {
-      if (s.cells.length && s.cells.every(({ r, c }) => (grid[r][c].letter ?? '') !== '')) ids.add(s.id);
-    }
-    return ids;
-  }, [segments, grid]);
 
   useEffect(() => { setGrid(g => mapExpected(g, segments)); }, [segments.length]);
+
+    useEffect(() => {
+      setIncorrectCells(prev => {
+        const next = new Set(prev);
+
+        for (const seg of segments) {
+          if (!seg.clue.answer) continue;
+
+          let hasAnyExpected = false;
+          let allFilled = true;
+          let anyWrong = false;
+          let anyExtra = false;
+
+          // 1. Prüfen, ob dieses Wort überhaupt "fertig" ist
+          for (const { r, c } of seg.cells) {
+            const cell = grid[r][c];
+
+            if (cell.expected) {
+              hasAnyExpected = true;
+              if (!cell.letter) {
+                allFilled = false;
+                break;
+              }
+              if (cell.letter !== cell.expected) {
+                anyWrong = true;
+              }
+            } else {
+              // Zelle ohne expected sollte eigentlich leer sein
+              if (cell.letter) {
+                anyExtra = true;
+              }
+            }
+          }
+
+          // Noch nicht vollständig ausgefüllt → nichts an den bisherigen Fehlern ändern.
+          // So bleiben rote Buchstaben erhalten, bis man genau diese Zelle ändert/löscht.
+          if (!hasAnyExpected || !allFilled) continue;
+
+          const segmentIsCorrect = !anyWrong && !anyExtra;
+
+          if (segmentIsCorrect) {
+            // Wort ist jetzt korrekt → alle Fehler-Markierungen für dieses Wort löschen
+            for (const { r, c } of seg.cells) {
+              next.delete(`${r}-${c}`);
+            }
+          } else {
+            // Wort ist komplett, aber falsch:
+            // 1) Erst mal alle Zellen dieses Segments aus "next" entfernen
+            for (const { r, c } of seg.cells) {
+              next.delete(`${r}-${c}`);
+            }
+            // 2) Dann NUR falsche / "zu viel" gesetzte Buchstaben wieder hinzufügen
+            for (const { r, c } of seg.cells) {
+              const cell = grid[r][c];
+
+              if (cell.expected) {
+                if (cell.letter && cell.letter !== cell.expected) {
+                  next.add(`${r}-${c}`);
+                }
+              } else if (cell.letter) {
+                // Buchstabe an einer Stelle, wo eigentlich keiner hingehört
+                next.add(`${r}-${c}`);
+              }
+            }
+          }
+        }
+        return next;
+      });
+    }, [grid, segments]);
 
   // Timer
   useEffect(() => {
@@ -734,37 +845,64 @@ export default function App() {
       if (mode !== 'play' || !activeSeg) return;
       const { seg, index } = activeSeg;
 
+      // BACKSPACE
       if (e.key === 'Backspace') {
         e.preventDefault();
         setGrid(g => {
           const g2 = cloneGrid(g);
-          const { r, c } = seg.cells[index];
-          if (g2[r][c].letter) g2[r][c].letter = '';
-          else if (index > 0) {
-            const prev = seg.cells[index - 1];
-            g2[prev.r][prev.c].letter = '';
+          let target = seg.cells[index];
+          const { r, c } = target;
+
+          if (g2[r][c].letter) {
+            g2[r][c].letter = '';
+          } else if (index > 0) {
+            const prevPos = seg.cells[index - 1];
+            g2[prevPos.r][prevPos.c].letter = '';
+            target = prevPos;
             setActiveSeg({ seg, index: index - 1 });
           }
+
+          // Buchstabe in target-Zelle wurde geändert/gelöscht -> Fehler-Markierung dort entfernen
+          setIncorrectCells(prev => {
+            const next = new Set(prev);
+            next.delete(`${target.r}-${target.c}`);
+            return next;
+          });
+
           return g2;
         });
         return;
       }
 
+      // NORMALER BUCHSTABE
       const L = letterFromKey(e);
       if (L) {
         e.preventDefault();
+        const { r, c } = seg.cells[index];
+
         setGrid(g => {
           const g2 = cloneGrid(g);
-          const { r, c } = seg.cells[index];
           g2[r][c].letter = L;
-          if (index < seg.cells.length - 1) setActiveSeg({ seg, index: index + 1 });
           return g2;
         });
+
+        // Bei neuer Eingabe in dieser Zelle: alte Fehl-Markierung löschen
+        setIncorrectCells(prev => {
+          const next = new Set(prev);
+          next.delete(`${r}-${c}`);
+          return next;
+        });
+
+        if (index < seg.cells.length - 1) {
+          setActiveSeg({ seg, index: index + 1 });
+        }
       }
     }
+
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [activeSeg, mode]);
+
 
   // Lösungswort
   const solutionSlots = useMemo(() => {
@@ -887,6 +1025,8 @@ export default function App() {
     setTimerRunning(false); setTimerStart(null); setElapsedMs(0);
     setShowWin(false); setWinTimeMs(null); setShowStart(false); setStartStage(0);
     setMode('edit'); setLocked(false);
+    setIncorrectCells(new Set());
+    try { localStorage.removeItem(LS_LOCK_KEY); } catch {}
   }
 
   function onResetSolutionNumbers() {
@@ -915,8 +1055,9 @@ export default function App() {
           }
         }
       }
-      return g2; // expected bleibt wie ist
+      return g2;
     });
+    setIncorrectCells(new Set());
   }
 
   function makeUrl(lock: boolean) {
@@ -1003,6 +1144,8 @@ export default function App() {
       setMode('edit'); setLocked(false);
       resetTimer();
       saveDraft(g);
+      setIncorrectCells(new Set()); 
+      try { localStorage.removeItem(LS_LOCK_KEY); } catch {}
     } catch {
       alert('Konnte Datei nicht lesen.');
     } finally {
@@ -1021,8 +1164,20 @@ export default function App() {
   return (
     <div className={`app ${showWin || showStart || modal.open || settingsOpen ? 'modal-open' : ''}`}>
       <style>{`
-        @keyframes flashCorrect { 0%{background:#0f141b}25%{background:#065f46}50%{background:#059669}100%{background:#0f141b} }
-        .cell.flash-correct { animation: flashCorrect 600ms ease-in-out; }
+          @keyframes flashCorrect {
+            25%, 75% {
+              background-color: #065f46; /* kräftiges Grün */
+              color: #bbf7d0;            /* hellgrüne Schrift */
+            }
+          }
+        
+          .cell.flash-correct {
+            animation: flashCorrect 600ms ease-in-out;
+          }
+        
+          .cell.incorrect {
+            color: #fca5a5; /* rot */
+          }     
 
         /* Overlays (Bar über Backdrop, unter Modal-Fenster) */
         .modalBackdrop { z-index: 10000; position: fixed; inset: 0; background: rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; }
@@ -1110,6 +1265,11 @@ export default function App() {
         
         /* Zellen sind Anker */
         .grid .cell { position: relative; }
+
+        /* Schreiblinie (aktuelles Wort) leicht hervorheben */
+        .cell.active-line:not(.active) {
+          background-color: rgba(117, 229, 210, 0.08);
+        }
         
         /* gemeinsame Basis */
         .arrow {
@@ -1222,26 +1382,25 @@ export default function App() {
         </header>
 
         {/* Grid */}
+        {/* Grid */}
         <div className="grid" ref={gridRef}>
           {grid.map((row, r) => (
             <div className="row" key={r}>
               {row.map((cell, c) => {
-                const isActive = !!activeSeg?.seg.cells.find(cc => cc.r === r && cc.c === c) &&
-                                 activeSeg?.seg.cells[activeSeg.index]?.r === r &&
-                                 activeSeg?.seg.cells[activeSeg.index]?.c === c;
+                const activeCell = activeSeg?.seg.cells[activeSeg.index];
+                const isActive = !!(activeCell && activeCell.r === r && activeCell.c === c);
+                const isInActiveSeg = !!activeSeg?.seg.cells.some(cc => cc.r === r && cc.c === c);
 
-                const segForCell = segmentByCell.get(`${r}-${c}`);
-                const isFlashing = !!(segForCell && flashingSegs.has(segForCell.id));
+                const segmentsForCell = segmentsByCell.get(`${r}-${c}`) ?? [];
 
-                const wrongNow = !!(
-                  segForCell && completedSegIds.has(segForCell.id) &&
-                  cell.expected && cell.letter && cell.letter !== cell.expected
-                );
+                const isIncorrect = incorrectCells.has(`${r}-${c}`);
+                const isFlashing = segmentsForCell.some(seg => flashingSegs.has(seg.id));
 
                 const classNames = [
                   'cell',
                   cell.type === 'clue' ? 'clue' : '',
-                  wrongNow ? 'wrong' : '',
+                  isIncorrect ? 'incorrect' : '',
+                  isInActiveSeg ? 'active-line' : '',
                   isActive ? 'active' : '',
                   isFlashing ? 'flash-correct' : ''
                 ].filter(Boolean).join(' ');
@@ -1249,7 +1408,11 @@ export default function App() {
                 const startDirs = arrowStarts.get(`${r}-${c}`);
 
                 return (
-                  <div className={classNames} key={`${r}-${c}`} onClick={() => onCellClick(r, c)}>
+                  <div
+                    className={classNames}
+                    key={`${r}-${c}`}
+                    onClick={() => onCellClick(r, c)}
+                  >
                     {cell.type === 'clue' && cell.clue && (
                       <div className="clueText">{hideClues ? '' : cell.clue.text}</div>
                     )}
