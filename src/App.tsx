@@ -1,7 +1,4 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useEffect, useMemo, useRef, useState } from 'react';
-
-
 declare global { interface Window { LZString: any } }
 
 function encodePayload(obj: unknown): string {
@@ -13,9 +10,11 @@ function decodePayload<T>(s: string): T {
   return JSON.parse(raw) as T;
 }
 
+import { useEffect, useMemo, useRef, useState } from 'react';
+
 // --- Types ---
 type Dir = 'RIGHT' | 'DOWN';
-export type Variant = 'LEFT_CLUE_RIGHT' | 'ABOVE_CLUE_DOWN' | 'LEFT_CLUE_DOWN' | 'ABOVE_CLUE_RIGHT' | 'LEFT_OF_CLUE_DOWN';
+export type Variant = 'LEFT_CLUE_RIGHT' | 'ABOVE_CLUE_DOWN' | 'LEFT_CLUE_DOWN';
 
 type Clue = { text: string; variant: Variant; answer?: string };
 type Cell = {
@@ -36,7 +35,6 @@ type Segment = {
 
 const N = 12;
 const LS_KEY = 'schwedenraetsel_v1';
-const LS_LOCK_KEY = 'schwedenraetsel_v1_lock';
 
 // --- Utils ---
 const emptyGrid = (): Cell[][] =>
@@ -67,48 +65,21 @@ function normalizeAnswer(s: string) {
 // --- Build segments from clues ---
 function buildSegments(grid: Cell[][]): Segment[] {
   const segs: Segment[] = [];
-
   for (let r = 0; r < N; r++) {
     for (let c = 0; c < N; c++) {
       const cell = grid[r][c];
       if (cell.type !== 'clue' || !cell.clue) continue;
       const clue = cell.clue;
 
-      // Defaults
-      let start: { r: number; c: number } = { r, c: c + 1 };
-      let dir: Dir = 'RIGHT';
-
-      const variant: Variant = (clue.variant ?? 'LEFT_CLUE_RIGHT') as Variant;
-
-      switch (variant) {
-        case 'LEFT_CLUE_RIGHT':
-          start = { r, c: c + 1 }; dir = 'RIGHT';
-          break;
-
-        case 'ABOVE_CLUE_DOWN':
-          start = { r: r + 1, c }; dir = 'DOWN';
-          break;
-
-        case 'LEFT_CLUE_DOWN':
-          start = { r, c: c + 1 }; dir = 'DOWN';
-          break;
-
-        case 'ABOVE_CLUE_RIGHT':
-          start = { r: r + 1, c }; dir = 'RIGHT';
-          break;
-
-        case 'LEFT_OF_CLUE_DOWN':     // ✅ neu: Pfeil links vom Hinweis, Lösung ↓
-          start = { r, c: c - 1 };
-          dir = 'DOWN';
-          break;
-
-        default:
-          start = { r, c: c + 1 }; dir = 'RIGHT';
-          break;
+      let start: { r: number; c: number };
+      let dir: Dir;
+      if (clue.variant === 'LEFT_CLUE_RIGHT') {
+        start = { r, c: c + 1 }; dir = 'RIGHT';
+      } else if (clue.variant === 'ABOVE_CLUE_DOWN') {
+        start = { r: r + 1, c }; dir = 'DOWN';
+      } else { // LEFT_CLUE_DOWN
+        start = { r, c: c + 1 }; dir = 'DOWN';
       }
-
-      // Falls der Start außerhalb des Grids läge, diesen Hinweis überspringen
-      if (!inBounds(start.r, start.c)) continue;
 
       const cells: { r: number; c: number }[] = [];
       let cur = { ...start };
@@ -120,7 +91,6 @@ function buildSegments(grid: Cell[][]): Segment[] {
         if (grid[nxt.r][nxt.c].type === 'clue') break;
         cur = nxt;
       }
-
       segs.push({ id: `${r}-${c}`, cluePos: { r, c }, dir, start, cells, clue });
     }
   }
@@ -147,12 +117,12 @@ function ConfettiCanvas() {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const cnv = ref.current!; const ctx = cnv.getContext('2d')!;
-    const dpr = Math.max(1, (window.devicePixelRatio || 1));
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
     function resize() {
       const w = innerWidth, h = innerHeight;
-      cnv.width = Math.floor(w * dpr); cnv.height = Math.floor(h * dpr);
+      cnv.width = Math.floor(w*dpr); cnv.height = Math.floor(h*dpr);
       cnv.style.width = `${w}px`; cnv.style.height = `${h}px`;
-      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.scale(dpr, dpr);
+      ctx.setTransform(1,0,0,1,0,0); ctx.scale(dpr,dpr);
     }
     resize(); addEventListener('resize', resize);
     type P = { x:number;y:number;vx:number;vy:number;r:number;rot:number;vr:number;color:string };
@@ -182,27 +152,6 @@ function ConfettiCanvas() {
 
 // --- App ---
 type SettingsTab = 'file' | 'sound' | 'share';
-type StartMode = 'choose' | 'action' | 'boring';
-type MiniGameId = 'prankButtons' | 'slot' | 'findCat';
-
-// hier kannst du später einfach weitere Spiele ergänzen:
-const MINI_GAMES: MiniGameId[] = ['prankButtons', 'slot', 'findCat'];
-
-// Slot-Emojis
-const SLOT_SYMBOLS = ['🐈', '☕', '🎧', '🐪', '⭐'] as const;
-type SlotSymbol = (typeof SLOT_SYMBOLS)[number];
-
-function randomSlotSymbol(): SlotSymbol {
-  const idx = Math.floor(Math.random() * SLOT_SYMBOLS.length);
-  return SLOT_SYMBOLS[idx];
-}
-
-// 🐈 „Finde die Katze“-Konfiguration
-const FIND_CAT_SIZE = 3; // 3x3
-const FIND_CAT_CELLS = FIND_CAT_SIZE * FIND_CAT_SIZE;
-function randomCatPos() {
-  return Math.floor(Math.random() * FIND_CAT_CELLS);
-}
 
 export default function App() {
   const [grid, setGrid] = useState<Cell[][]>(() => emptyGrid());
@@ -222,36 +171,6 @@ export default function App() {
   const [startStage, setStartStage] = useState<number>(0);
   const [showWin, setShowWin] = useState(false);
 
-  // Start-Modus / Minigame
-  const [startMode, setStartMode] = useState<StartMode>('choose');
-  const [miniGame, setMiniGame] = useState<MiniGameId | null>(null);
-
-    // 🎰 Slot-Minispiel
-    const [slots, setSlots] = useState<SlotSymbol[]>([
-      randomSlotSymbol(),
-      randomSlotSymbol(),
-      randomSlotSymbol(),
-    ] );
-    const [isSpinning, setIsSpinning] = useState(false);
-    const [spinCount, setSpinCount] = useState(0);
-  
-    // Anzeige: Jackpot-Chance für den NÄCHSTEN Spin in %
-    const nextJackpotChance = useMemo(() => {
-      const nextSpinNumber = spinCount + 1;
-      if (nextSpinNumber < 5) return 0;
-      const p = Math.min(1, 0.3 + (nextSpinNumber - 5) * 0.1);
-      return Math.round(p * 100);
-    }, [spinCount]);
-  
-  // 🐈 „Finde die Katze“-Minispiel
-  const [catPos, setCatPos] = useState<number>(() => randomCatPos());
-  const [catAttempts, setCatAttempts] = useState(0);
-  const [catHighlight, setCatHighlight] = useState<'none' | 'hint' | 'success'>('none');
-  const [catFound, setCatFound] = useState(false);
-  const [catRevealed, setCatRevealed] = useState<boolean[]>(
-    () => Array(FIND_CAT_CELLS).fill(false)
-  );
-
   // Countdown vorm Start
   const [preCount, setPreCount] = useState<number | null>(null);
 
@@ -261,11 +180,6 @@ export default function App() {
   // Flashing
   const [flashingSegs, setFlashingSegs] = useState<Set<string>>(new Set());
   const prevSolvedRef = useRef<Set<string>>(new Set());
-  
-  // dauerhaft falsch markierte Zellen (bis geändert/gelöscht)
-  const [incorrectCells, setIncorrectCells] = useState<Set<string>>(
-    () => new Set()
-  );  
 
   // File input
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -277,6 +191,7 @@ export default function App() {
   // --- Globale Lautstärke ---
   const MUSIC_MASTER = 0.6;
 
+
   // Playlist-Typ
   type PlaylistKey = 'lofi' | 'rock' | 'techno';
 
@@ -286,6 +201,7 @@ export default function App() {
       '/sounds/backgroundmusic/lofi/lofi_1.mp3',
       '/sounds/backgroundmusic/lofi/lofi_2.mp3',
       '/sounds/backgroundmusic/lofi/lofi_3.mp3',
+      '/sounds/backgroundmusic/lofi/Musik_loop.mp3',
     ],
     rock: [
       '/sounds/backgroundmusic/rock/rock_1.mp3',
@@ -359,22 +275,6 @@ export default function App() {
     return arr[idx];
   }, [playlist, trackIdx]);
 
-  const startBgMusic = () => {
-    const a = musicAudioRef.current;
-    if (!a || soundMuted) return;
-  
-    // Falls noch kein Track geladen ist, jetzt setzen
-    if (!a.src && currentTrack) {
-      a.src = currentTrack;
-      a.currentTime = 0;
-      a.load();
-    }
-  
-    void a.play().catch(() => {
-    });
-  };
-  
-
   // Audios anlegen
   useEffect(() => {
     const click = new Audio(CLICK_URL);
@@ -416,10 +316,17 @@ export default function App() {
     music.addEventListener('play',  onPlay);
     music.addEventListener('pause', onPause);
 
+    const startMusicOnce = () => {
+      if (!soundMuted) void music.play().catch(() => {});
+      window.removeEventListener('pointerdown', startMusicOnce);
+    };
+    window.addEventListener('pointerdown', startMusicOnce, { once: true });
+
     return () => {
       music.removeEventListener('ended', onEnded);
       music.removeEventListener('play',  onPlay);
       music.removeEventListener('pause', onPause);
+      window.removeEventListener('pointerdown', startMusicOnce);
       if (fadeRafRef.current) cancelAnimationFrame(fadeRafRef.current);
 
       clickAudioRef.current = null;
@@ -633,78 +540,43 @@ export default function App() {
     const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
     const params = new URLSearchParams(raw);
     const p = params.get('p');
-    const isLockedFromUrl = params.get('lock') === '1';
-  
+    const isLocked = params.get('lock') === '1';
+
     if (p) {
       const payload = decodePayload<{ grid: Cell[][] }>(p);
       const g = payload.grid.map(row =>
         row.map(cell => ({
-          type: cell.type,
-          clue: cell.clue,
-          letter: cell.letter ?? '',
-          solutionIndex: cell.solutionIndex ?? null,
-          expected: null,
+          type: cell.type, clue: cell.clue, letter: cell.letter ?? '',
+          solutionIndex: cell.solutionIndex ?? null, expected: null,
         }))
       );
-  
       setGrid(g);
-      setLocked(isLockedFromUrl);
-      setMode(isLockedFromUrl ? 'play' : 'edit');
-      setShowWin(false);
-      setWinTimeMs(null);
-      setTimerRunning(false);
-      setTimerStart(null);
-      setElapsedMs(0);
-  
+      setLocked(isLocked);
+      setMode(isLocked ? 'play' : 'edit');
+      setShowWin(false); setWinTimeMs(null);
       setTimeout(() => setGrid(g2 => mapExpected(g2)), 0);
-  
-      // 🔒 Lock-Status auch im localStorage merken
-      try {
-        if (isLockedFromUrl) {
-          localStorage.setItem(LS_LOCK_KEY, '1');
-        } else {
-          localStorage.removeItem(LS_LOCK_KEY);
-        }
-      } catch {
-        // ignorieren
-      }
-  
+
+      // Timer / Start je nach Modus
+      setTimerRunning(false); setTimerStart(null); setElapsedMs(0);
+      if (isLocked) { setShowStart(true); setStartStage(0); } else { setShowStart(false); setStartStage(0); }
+
       // Edit-Link -> Hash entfernen
-      if (!isLockedFromUrl) {
-        history.replaceState(null, '', location.pathname);
-      }
+      if (!isLocked) history.replaceState(null, '', location.pathname);
     } else {
-      // Prüfen, ob wir aus der Vergangenheit wissen,
-      // dass dieses Rätsel "nur lösen" sein soll.
-      let forceLock = false;
-      try {
-        forceLock = localStorage.getItem(LS_LOCK_KEY) === '1';
-      } catch {
-        forceLock = false;
-      }
-  
       // Entwurf aus localStorage
       try {
         const rawLs = localStorage.getItem(LS_KEY);
         if (rawLs) {
           const saved = JSON.parse(rawLs) as { grid: Cell[][] };
           if (saved?.grid?.length === N) {
-            const g: Cell[][] = saved.grid.map(row =>
+            const g = saved.grid.map(row =>
               row.map(cell => ({
-                type: cell.type,
-                clue: cell.clue,
-                letter: cell.letter ?? '',
-                solutionIndex: cell.solutionIndex ?? null,
-                expected: null,
+                type: cell.type, clue: cell.clue, letter: cell.letter ?? '',
+                solutionIndex: cell.solutionIndex ?? null, expected: null,
               }))
             );
             setGrid(g);
             setTimeout(() => setGrid(g2 => mapExpected(g2)), 0);
-            setIncorrectCells(new Set());
-  
-            // ⬅️ hier Lock erzwingen, falls nötig
-            setLocked(forceLock);
-            setMode(forceLock ? 'play' : 'edit');
           }
         }
       } catch (e) {
@@ -712,7 +584,6 @@ export default function App() {
       }
     }
   }, []);
-  
 
   // ===== Debounced Autosave (nur wenn NICHT locked) =====
   useEffect(() => {
@@ -737,25 +608,7 @@ export default function App() {
   // Wenn in Play-Modus gewechselt wird: Startdialog zeigen
   useEffect(() => {
     if (mode === 'play' && timerStart === null && !showStart && !showWin) {
-      setShowStart(true);
-      setStartStage(0);
-      setPreCount(null);
-      setStartMode('choose');
-      setMiniGame(null);
-
-      // Minigames zurücksetzen
-      setSpinCount(0);
-      setIsSpinning(false);
-      setSlots([
-        randomSlotSymbol(),
-        randomSlotSymbol(),
-        randomSlotSymbol(),
-      ]);
-      setCatPos(randomCatPos());
-      setCatAttempts(0);
-      setCatHighlight('none');
-      setCatFound(false);
-      setCatRevealed(Array(FIND_CAT_CELLS).fill(false));
+      setShowStart(true); setStartStage(0);
     }
   }, [mode]);
 
@@ -770,90 +623,21 @@ export default function App() {
     }
     return m;
   }, [segments]);
-
-  const segmentsByCell = useMemo(() => {
-    const m = new Map<string, Segment[]>();
-    for (const s of segments) {
-      for (const pos of s.cells) {
-        const key = `${pos.r}-${pos.c}`;
-        const arr = m.get(key);
-        if (arr) arr.push(s);
-        else m.set(key, [s]);
-      }
-    }
+  
+  const segmentByCell = useMemo(() => {
+    const m = new Map<string, Segment>();
+    for (const s of segments) for (const pos of s.cells) m.set(`${pos.r}-${pos.c}`, s);
     return m;
   }, [segments]);
+  const completedSegIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const s of segments) {
+      if (s.cells.length && s.cells.every(({ r, c }) => (grid[r][c].letter ?? '') !== '')) ids.add(s.id);
+    }
+    return ids;
+  }, [segments, grid]);
 
   useEffect(() => { setGrid(g => mapExpected(g, segments)); }, [segments.length]);
-
-    useEffect(() => {
-      setIncorrectCells(prev => {
-        const next = new Set(prev);
-
-        for (const seg of segments) {
-          if (!seg.clue.answer) continue;
-
-          let hasAnyExpected = false;
-          let allFilled = true;
-          let anyWrong = false;
-          let anyExtra = false;
-
-          // 1. Prüfen, ob dieses Wort überhaupt "fertig" ist
-          for (const { r, c } of seg.cells) {
-            const cell = grid[r][c];
-
-            if (cell.expected) {
-              hasAnyExpected = true;
-              if (!cell.letter) {
-                allFilled = false;
-                break;
-              }
-              if (cell.letter !== cell.expected) {
-                anyWrong = true;
-              }
-            } else {
-              // Zelle ohne expected sollte eigentlich leer sein
-              if (cell.letter) {
-                anyExtra = true;
-              }
-            }
-          }
-
-          // Noch nicht vollständig ausgefüllt → nichts an den bisherigen Fehlern ändern.
-          // So bleiben rote Buchstaben erhalten, bis man genau diese Zelle ändert/löscht.
-          if (!hasAnyExpected || !allFilled) continue;
-
-          const segmentIsCorrect = !anyWrong && !anyExtra;
-
-          if (segmentIsCorrect) {
-            // Wort ist jetzt korrekt → alle Fehler-Markierungen für dieses Wort löschen
-            for (const { r, c } of seg.cells) {
-              next.delete(`${r}-${c}`);
-            }
-          } else {
-            // Wort ist komplett, aber falsch:
-            // 1) Erst mal alle Zellen dieses Segments aus "next" entfernen
-            for (const { r, c } of seg.cells) {
-              next.delete(`${r}-${c}`);
-            }
-            // 2) Dann NUR falsche / "zu viel" gesetzte Buchstaben wieder hinzufügen
-            for (const { r, c } of seg.cells) {
-              const cell = grid[r][c];
-
-              if (cell.expected) {
-                if (cell.letter && cell.letter !== cell.expected) {
-                  next.add(`${r}-${c}`);
-                }
-              } else if (cell.letter) {
-                // Buchstabe an einer Stelle, wo eigentlich keiner hingehört
-                next.add(`${r}-${c}`);
-              }
-            }
-          }
-        }
-        return next;
-      });
-    }, [grid, segments]);
 
   // Timer
   useEffect(() => {
@@ -914,64 +698,37 @@ export default function App() {
       if (mode !== 'play' || !activeSeg) return;
       const { seg, index } = activeSeg;
 
-      // BACKSPACE
       if (e.key === 'Backspace') {
         e.preventDefault();
         setGrid(g => {
           const g2 = cloneGrid(g);
-          let target = seg.cells[index];
-          const { r, c } = target;
-
-          if (g2[r][c].letter) {
-            g2[r][c].letter = '';
-          } else if (index > 0) {
-            const prevPos = seg.cells[index - 1];
-            g2[prevPos.r][prevPos.c].letter = '';
-            target = prevPos;
+          const { r, c } = seg.cells[index];
+          if (g2[r][c].letter) g2[r][c].letter = '';
+          else if (index > 0) {
+            const prev = seg.cells[index - 1];
+            g2[prev.r][prev.c].letter = '';
             setActiveSeg({ seg, index: index - 1 });
           }
-
-          // Buchstabe in target-Zelle wurde geändert/gelöscht -> Fehler-Markierung dort entfernen
-          setIncorrectCells(prev => {
-            const next = new Set(prev);
-            next.delete(`${target.r}-${target.c}`);
-            return next;
-          });
-
           return g2;
         });
         return;
       }
 
-      // NORMALER BUCHSTABE
       const L = letterFromKey(e);
       if (L) {
         e.preventDefault();
-        const { r, c } = seg.cells[index];
-
         setGrid(g => {
           const g2 = cloneGrid(g);
+          const { r, c } = seg.cells[index];
           g2[r][c].letter = L;
+          if (index < seg.cells.length - 1) setActiveSeg({ seg, index: index + 1 });
           return g2;
         });
-
-        // Bei neuer Eingabe in dieser Zelle: alte Fehl-Markierung löschen
-        setIncorrectCells(prev => {
-          const next = new Set(prev);
-          next.delete(`${r}-${c}`);
-          return next;
-        });
-
-        if (index < seg.cells.length - 1) {
-          setActiveSeg({ seg, index: index + 1 });
-        }
       }
     }
-
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [activeSeg, mode]);
-
 
   // Lösungswort
   const solutionSlots = useMemo(() => {
@@ -1094,26 +851,6 @@ export default function App() {
     setTimerRunning(false); setTimerStart(null); setElapsedMs(0);
     setShowWin(false); setWinTimeMs(null); setShowStart(false); setStartStage(0);
     setMode('edit'); setLocked(false);
-    setIncorrectCells(new Set());
-    setPreCount(null);
-    setStartMode('choose');
-    setMiniGame(null);
-
-    // Minigames zurücksetzen
-    setSpinCount(0);
-    setIsSpinning(false);
-    setSlots([
-      randomSlotSymbol(),
-      randomSlotSymbol(),
-      randomSlotSymbol(),
-    ]);
-    setCatPos(randomCatPos());
-    setCatAttempts(0);
-    setCatHighlight('none');
-    setCatFound(false);
-    setCatRevealed(Array(FIND_CAT_CELLS).fill(false));
-
-    try { localStorage.removeItem(LS_LOCK_KEY); } catch {}
   }
 
   function onResetSolutionNumbers() {
@@ -1131,26 +868,7 @@ export default function App() {
     setElapsedMs(0);
     setWinTimeMs(null);
     setShowStart(false);
-    setPreCount(null);
-    setStartStage(0);
-    setStartMode('choose');
-    setMiniGame(null);
-
-    // Minigames zurücksetzen
-    setSpinCount(0);
-    setIsSpinning(false);
-    setSlots([
-      randomSlotSymbol(),
-      randomSlotSymbol(),
-      randomSlotSymbol(),
-    ]);
-    setCatPos(randomCatPos());
-    setCatAttempts(0);
-    setCatHighlight('none');
-    setCatFound(false);
-    setCatRevealed(Array(FIND_CAT_CELLS).fill(false));
   }
-
   function clearAnswers() {
     setGrid(g => {
       const g2 = cloneGrid(g);
@@ -1161,9 +879,8 @@ export default function App() {
           }
         }
       }
-      return g2;
+      return g2; // expected bleibt wie ist
     });
-    setIncorrectCells(new Set());
   }
 
   function makeUrl(lock: boolean) {
@@ -1174,152 +891,11 @@ export default function App() {
     const base = `${location.origin}${location.pathname}`;
     const p = encodePayload(payload);
     const suffix = lock ? `#p=${p}&lock=1` : `#p=${p}`;
-    return `${base}${suffix}`;
+    return `${base}${suffix.slice(-4)}`;
   }
 
   function onCopyLink()       { navigator.clipboard.writeText(makeUrl(false)); alert('Link kopiert! (Editor)'); }
   function onCopySolveOnly()  { navigator.clipboard.writeText(makeUrl(true));  alert('Spiel-Link kopiert! (Nur Lösen)'); }
-
-  const pickRandomMiniGame = (): MiniGameId => {
-    const idx = Math.floor(Math.random() * MINI_GAMES.length);
-    return MINI_GAMES[idx];
-  };
-
-  function chooseActionMode() {
-    setStartMode('action');
-    setMiniGame(pickRandomMiniGame());
-    setStartStage(0);
-    setPreCount(null);
-
-    // Minigames zurücksetzen
-    setSpinCount(0);
-    setIsSpinning(false);
-    setSlots([
-      randomSlotSymbol(),
-      randomSlotSymbol(),
-      randomSlotSymbol(),
-    ]);
-    setCatPos(randomCatPos());
-    setCatAttempts(0);
-    setCatHighlight('none');
-    setCatFound(false);
-    setCatRevealed(Array(FIND_CAT_CELLS).fill(false));
-  }
-
-  function chooseBoringMode() {
-    setStartMode('boring');
-    setMiniGame(null);
-    setStartStage(0);
-    setPreCount(null);
-
-    // Minigames zurücksetzen
-    setSpinCount(0);
-    setIsSpinning(false);
-    setSlots([
-      randomSlotSymbol(),
-      randomSlotSymbol(),
-      randomSlotSymbol(),
-    ]);
-    setCatPos(randomCatPos());
-    setCatAttempts(0);
-    setCatHighlight('none');
-    setCatFound(false);
-    setCatRevealed(Array(FIND_CAT_CELLS).fill(false));
-  }
-
-  function handleSlotSpin() {
-    if (isSpinning) return;
-
-    startBgMusic();
-    setIsSpinning(true);
-
-    // Spin-Nummer für diese Runde
-    const thisSpinNumber = spinCount + 1;
-    setSpinCount(thisSpinNumber);
-
-    // 1–3: 0%, ab 4: 50%, dann +10% pro Spin, max. 100%
-    const tripleChance =
-      thisSpinNumber < 4 ? 0 : Math.min(1, 0.5 + (thisSpinNumber - 4) * 0.1);
-
-    const forceTriple = Math.random() < tripleChance;
-
-    const finalSlots: SlotSymbol[] = forceTriple
-      ? (() => {
-          const sym = randomSlotSymbol();
-          return [sym, sym, sym];
-        })()
-      : [randomSlotSymbol(), randomSlotSymbol(), randomSlotSymbol()];
-
-    // kleine Fake-Animation
-    const ANIM_STEPS = 10;
-    const ANIM_INTERVAL = 70;
-
-    let step = 0;
-    const animId = window.setInterval(() => {
-      step += 1;
-
-      if (step < ANIM_STEPS) {
-        // während der Animation zufällige Symbole rattern lassen
-        setSlots([
-          randomSlotSymbol(),
-          randomSlotSymbol(),
-          randomSlotSymbol(),
-        ]);
-      } else {
-        window.clearInterval(animId);
-        setSlots(finalSlots);
-        setIsSpinning(false);
-
-        const isTriple =
-          finalSlots[0] === finalSlots[1] &&
-          finalSlots[1] === finalSlots[2];
-
-        if (isTriple) {
-          // kurzer Moment, dann Countdown starten
-          setTimeout(() => {
-            beginCountdown();
-          }, 400);
-        }
-      }
-    }, ANIM_INTERVAL);
-  }
-
-  function handleCatClick(idx: number) {
-    if (preCount !== null) return;
-    if (startMode !== 'action' || miniGame !== 'findCat') return;
-    if (catFound) return; // nach Fund nichts mehr machen
-
-    startBgMusic();
-
-    // Feld als "aufgedeckt" markieren
-    setCatRevealed(prev => {
-      const next = [...prev];
-      next[idx] = true;
-      return next;
-    });
-
-    if (idx === catPos) {
-      // Gefunden – kurz grün, dann Countdown
-      setCatFound(true);
-      setCatHighlight('success');
-      setTimeout(() => {
-        setCatHighlight('none');
-        beginCountdown();
-      }, 350);
-    } else {
-      // Falsches Feld
-      setCatAttempts(prev => {
-        const next = prev + 1;
-
-        // Ab dem 4. Fehlversuch: Katze kurz grün hervorheben
-        if (next >= 4) {
-          setCatHighlight('hint');
-          setTimeout(() => setCatHighlight('none'), 450);
-        }
-        return next;
-      });
-    }
-  }
 
   // Countdown-Start (letzter START-Button)
   function beginCountdown() {
@@ -1391,8 +967,6 @@ export default function App() {
       setMode('edit'); setLocked(false);
       resetTimer();
       saveDraft(g);
-      setIncorrectCells(new Set()); 
-      try { localStorage.removeItem(LS_LOCK_KEY); } catch {}
     } catch {
       alert('Konnte Datei nicht lesen.');
     } finally {
@@ -1411,20 +985,8 @@ export default function App() {
   return (
     <div className={`app ${showWin || showStart || modal.open || settingsOpen ? 'modal-open' : ''}`}>
       <style>{`
-          @keyframes flashCorrect {
-            25%, 75% {
-              background-color: #065f46; /* kräftiges Grün */
-              color: #bbf7d0;            /* hellgrüne Schrift */
-            }
-          }
-        
-          .cell.flash-correct {
-            animation: flashCorrect 600ms ease-in-out;
-          }
-        
-          .cell.incorrect {
-            color: #fca5a5; /* rot */
-          }     
+        @keyframes flashCorrect { 0%{background:#0f141b}25%{background:#065f46}50%{background:#059669}100%{background:#0f141b} }
+        .cell.flash-correct { animation: flashCorrect 600ms ease-in-out; }
 
         /* Overlays (Bar über Backdrop, unter Modal-Fenster) */
         .modalBackdrop { z-index: 10000; position: fixed; inset: 0; background: rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; }
@@ -1485,7 +1047,7 @@ export default function App() {
           appearance:none; -webkit-appearance:none; -moz-appearance:none;
           background:#0f141b; color:#e5e7eb;
           border:1px solid #2a3442; border-radius:8px;
-          padding:6px 28px 6px 10px;
+          padding:6px 28px 6px 10px;               /* Platz für Pfeil rechts */
           min-width:120px; font-weight:600;
         }
         .selectEl:hover{ border-color:#3a4a62; }
@@ -1493,6 +1055,7 @@ export default function App() {
           box-shadow:0 0 0 3px rgba(96,165,250,.18);
         }
 
+        /* kleiner Chevron als „Pfeil“ */
         .selectBox::after{
           content:""; pointer-events:none;
           position:absolute; right:10px; top:50%; margin-top:-5px;
@@ -1502,6 +1065,7 @@ export default function App() {
         }
         .selectBox:focus-within::after{ transform:rotate(225deg); margin-top:-3px; }
 
+        /* (optional) disabled Optionen blasser – nicht überall unterstützt */
         .selectEl option[disabled]{ color:#64748b; }
 
         .iconBtn{
@@ -1512,11 +1076,6 @@ export default function App() {
         
         /* Zellen sind Anker */
         .grid .cell { position: relative; }
-
-        /* Schreiblinie (aktuelles Wort) leicht hervorheben */
-        .cell.active-line:not(.active) {
-          background-color: rgba(117, 229, 210, 0.08);
-        }
         
         /* gemeinsame Basis */
         .arrow {
@@ -1535,11 +1094,12 @@ export default function App() {
         
         /* ▼ oben-rechts */
         .arrow.down {
-          top: 4px; right: 4px; left: auto;
+          top: 4px; right: 4px; left: auto; /* wichtig: left zurücksetzen */
           border-left: 7px solid transparent;
           border-right: 7px solid transparent;
           border-top: 12px solid #fff;
         }
+        
       `}</style>
 
       {showWin && <ConfettiCanvas />}
@@ -1629,25 +1189,26 @@ export default function App() {
         </header>
 
         {/* Grid */}
-        {/* Grid */}
         <div className="grid" ref={gridRef}>
           {grid.map((row, r) => (
             <div className="row" key={r}>
               {row.map((cell, c) => {
-                const activeCell = activeSeg?.seg.cells[activeSeg.index];
-                const isActive = !!(activeCell && activeCell.r === r && activeCell.c === c);
-                const isInActiveSeg = !!activeSeg?.seg.cells.some(cc => cc.r === r && cc.c === c);
+                const isActive = !!activeSeg?.seg.cells.find(cc => cc.r === r && cc.c === c) &&
+                                 activeSeg?.seg.cells[activeSeg.index]?.r === r &&
+                                 activeSeg?.seg.cells[activeSeg.index]?.c === c;
 
-                const segmentsForCell = segmentsByCell.get(`${r}-${c}`) ?? [];
+                const segForCell = segmentByCell.get(`${r}-${c}`);
+                const isFlashing = !!(segForCell && flashingSegs.has(segForCell.id));
 
-                const isIncorrect = incorrectCells.has(`${r}-${c}`);
-                const isFlashing = segmentsForCell.some(seg => flashingSegs.has(seg.id));
+                const wrongNow = !!(
+                  segForCell && completedSegIds.has(segForCell.id) &&
+                  cell.expected && cell.letter && cell.letter !== cell.expected
+                );
 
                 const classNames = [
                   'cell',
                   cell.type === 'clue' ? 'clue' : '',
-                  isIncorrect ? 'incorrect' : '',
-                  isInActiveSeg ? 'active-line' : '',
+                  wrongNow ? 'wrong' : '',
                   isActive ? 'active' : '',
                   isFlashing ? 'flash-correct' : ''
                 ].filter(Boolean).join(' ');
@@ -1655,11 +1216,7 @@ export default function App() {
                 const startDirs = arrowStarts.get(`${r}-${c}`);
 
                 return (
-                  <div
-                    className={classNames}
-                    key={`${r}-${c}`}
-                    onClick={() => onCellClick(r, c)}
-                  >
+                  <div className={classNames} key={`${r}-${c}`} onClick={() => onCellClick(r, c)}>
                     {cell.type === 'clue' && cell.clue && (
                       <div className="clueText">{hideClues ? '' : cell.clue.text}</div>
                     )}
@@ -1715,18 +1272,6 @@ export default function App() {
                   onChange={() => setModal(m => ({ ...m, variant: 'LEFT_CLUE_DOWN' }))} />
                 <span>links Hinweis, Pfeil ↓ (Start rechts, dann runter)</span>
               </label>
-              <label className="variant">
-                <input
-                  type="radio" name="v" checked={modal.variant === 'ABOVE_CLUE_RIGHT'}
-                  onChange={() => setModal(m => ({ ...m, variant: 'ABOVE_CLUE_RIGHT' }))}/>
-                <span>oben Hinweis, Pfeil → (Start unten, dann rechts)</span>
-              </label>
-              <label className="variant">
-                <input
-                  type="radio" name="v" checked={modal.variant === 'LEFT_OF_CLUE_DOWN'}
-                  onChange={() => setModal(m => ({ ...m, variant: 'LEFT_OF_CLUE_DOWN' }))}/>
-                <span>links vom Hinweis, Pfeil ↓ (Start links, dann runter)</span>
-              </label>
             </div>
 
             <label className="lab">Antwort (optional, für Prüfung)</label>
@@ -1749,345 +1294,64 @@ export default function App() {
         </div>
       )}
 
-      {/* Start-Modal mit Moduswahl + Minigames */}
+      {/* Start-Modal mit Minigame + Countdown */}
       {showStart && (
         <div className="modalBackdrop">
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2 style={{ marginTop: 0, textAlign: 'center' }}>🐪EY! Bist du Bereit?🐪</h2>
+            <h2 style={{marginTop:0, textAlign:'center'}}>🐪EY! Bist du Bereit?🐪</h2>
+            <p style={{ opacity:.9, marginTop:8, textAlign:'center' }}>
+              Klicke doch ganz einfach auf den  <strong>START</strong> Button, um den Timer zu starten.
+            </p>
+            <p style={{ opacity:.9, marginTop:8, textAlign:'center' }}>
+              <strong>🤭Hö Hö.. Hihihihi🤓</strong>
+            </p>
 
-            {/* Text nur solange man den Modus auswählt */}
-            {startMode === 'choose' && preCount === null && (
-              <>
-                <p style={{ opacity: 0.9, marginTop: 8, textAlign: 'center' }}>
-                  Wähle deinen Start-Modus:
-                </p>
-                <p style={{ opacity: 0.9, marginTop: 8, textAlign: 'center' }}>
-                  <strong>🚀 Action-Mini-Modus</strong> mit kleinem Start-Minigame oder{' '}
-                  <strong>😴 Langweiliger Modus</strong> mit direktem Countdown.
-                </p>
-              </>
-            )}
-
-            <div
-              className="startArea"
-              style={{ position: 'relative', marginTop: 12, height: 240, borderRadius: 10 }}
-            >
-              {/* 1) Modus-Auswahl */}
-              {startMode === 'choose' && preCount === null && (
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: '100%',
-                    gap: 16,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: 12,
-                      flexWrap: 'wrap',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <button className="btn" onClick={chooseActionMode}>
-                      🚀 Action-Mini-Modus
-                    </button>
-                    <button className="btn" onClick={chooseBoringMode}>
-                      😴 Langweiliger Modus
-                    </button>
-                  </div>
-                  <div
-                    style={{
-                      opacity: 0.8,
-                      fontSize: 13,
-                      textAlign: 'center',
-                      maxWidth: 380,
-                    }}
-                  >
-                    Im Action-Mini-Modus musst du erst ein kleines Start-Minigame überstehen.
-                    Im langweiligen Modus gibt es nur einen einzigen START-Button mit Countdown.
-                  </div>
+            <div className="startArea" style={{ position:'relative', marginTop:12, height: 220, borderRadius: 10 }}>
+              {startStage === 0 && preCount === null && (
+                <div style={{position:'absolute', left:'50%', transform:'translateX(-50%)', bottom:10, textAlign:'center'}}>
+                  <button className="btn" onClick={() => setStartStage(1)}>START</button>
                 </div>
               )}
-
-              {/* 2) Langweiliger Modus: ein Button, der direkt den Countdown startet */}
-              {startMode === 'boring' && preCount === null && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    bottom: 10,
-                    textAlign: 'center',
-                  }}
-                >
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      startBgMusic();
-                      beginCountdown();
-                    }}
-                  >
-                    START
-                  </button>
-                </div>
-              )}
-
-              {/* 3a) Action-Mini-Modus: trollige Buttons */}
-              {startMode === 'action' && miniGame === 'prankButtons' && preCount === null && (
+              {startStage === 1 && preCount === null && (
                 <>
-                  {startStage === 0 && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        bottom: 10,
-                        textAlign: 'center',
-                      }}
-                    >
-                      <button
-                        className="btn"
-                        onClick={() => {
-                          startBgMusic();
-                          setStartStage(1);
-                        }}
-                      >
-                        START
-                      </button>
-                    </div>
-                  )}
-
-                  {startStage === 1 && (
-                    <>
-                      <div style={{ position: 'absolute', right: 8, top: 8 }}>
-                        <button className="btn" onClick={() => setStartStage(2)}>
-                          START
-                        </button>
-                      </div>
-                      <div style={{ position: 'absolute', right: 8, top: 52, opacity: 0.9 }}>
-                        Los klick ihn doch ⬆️
-                      </div>
-                    </>
-                  )}
-
-                  {startStage === 2 && (
-                    <>
-                      <div style={{ position: 'absolute', left: 8, bottom: 52, opacity: 0.9 }}>
-                        ⬇️Warum drückst du ihn nicht?
-                      </div>
-                      <div style={{ position: 'absolute', left: 8, bottom: 8 }}>
-                        <button className="btn" onClick={() => setStartStage(3)}>
-                          START
-                        </button>
-                      </div>
-                    </>
-                  )}
-
-                  {startStage === 3 && (
-                    <>
-                      <div
-                        style={{
-                          position: 'absolute',
-                          right: 20,
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                        }}
-                      >
-                        <button className="btn" onClick={() => setStartStage(4)}>
-                          START
-                        </button>
-                      </div>
-                      <div
-                        style={{
-                          position: 'absolute',
-                          right: 10,
-                          top: 'calc(50% + 36px)',
-                          opacity: 0.9,
-                        }}
-                      >
-                        kannst du überhaupt BUTTONS drücken? 🧌
-                      </div>
-                    </>
-                  )}
-
-                  {startStage === 4 && (
-                    <>
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          bottom: 52,
-                          opacity: 0.9,
-                        }}
-                      >
-                        Hö höö,⬇️hihihihi
-                      </div>
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          bottom: 8,
-                        }}
-                      >
-                        <button className="btn" onClick={beginCountdown}>
-                          START
-                        </button>
-                      </div>
-                    </>
-                  )}
+                  <div style={{position:'absolute', right:8, top:8}}>
+                    <button className="btn" onClick={() => setStartStage(2)}>START</button>
+                  </div>
+                  <div style={{position:'absolute', right:8, top:52, opacity:.9}}>Los klick ihn doch ⬆️</div>
+                </>
+              )}
+              {startStage === 2 && preCount === null && (
+                <>
+                  <div style={{position:'absolute', left:8, bottom:52, opacity:.9}}>
+                    ⬇️Warum drückst du ihn nicht?
+                  </div>
+                  <div style={{position:'absolute', left:8, bottom:8}}>
+                    <button className="btn" onClick={() => setStartStage(3)}>START</button>
+                  </div>
+                </>
+              )}
+              {startStage === 3 && preCount === null && (
+                <>
+                  <div style={{position:'absolute', right:20, top:'50%', transform:'translateY(-50%)'}}>
+                    <button className="btn" onClick={() => setStartStage(4)}>START</button>
+                  </div>
+                  <div style={{position:'absolute', right:10, top:'calc(50% + 36px)', opacity:.9}}>
+                    kannst du überhaupt BUTTONS drücken? 🧌
+                  </div>
+                </>
+              )}
+              {startStage === 4 && preCount === null && (
+                <>
+                  <div style={{position:'absolute', left:'50%', transform:'translateX(-50%)', bottom:52, opacity:.9}}>
+                    Hö höö,⬇️hihihihi
+                  </div>
+                  <div style={{position:'absolute', left:'50%', transform:'translateX(-50%)', bottom:8}}>
+                    <button className="btn" onClick={beginCountdown}>START</button>
+                  </div>
                 </>
               )}
 
-              {/* 3b) Action-Mini-Modus: Slot-Minispiel */}
-              {startMode === 'action' && miniGame === 'slot' && preCount === null && (
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: '100%',
-                    gap: 16,
-                  }}
-                >
-                  <div style={{ display: 'flex', gap: 12 }}>
-                    {slots.map((sym, idx) => (
-                      <div
-                        key={idx}
-                        style={{
-                          width: 64,
-                          height: 64,
-                          borderRadius: 12,
-                          border: '2px solid #4b5563',
-                          background: '#020617',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 36,
-                          boxShadow: '0 6px 18px rgba(0,0,0,.45)',
-                        }}
-                      >
-                        {sym}
-                      </div>
-                    ))}
-                  </div>
-
-                  <button className="btn" disabled={isSpinning} onClick={handleSlotSpin}>
-                    {isSpinning ? '...' : 'SPIN'}
-                  </button>
-
-                  <div
-                    style={{
-                      opacity: 0.85,
-                      fontSize: 13,
-                      textAlign: 'center',
-                      maxWidth: 380,
-                    }}
-                  >
-                    <div>Du gewinnst, wenn alle drei Symbole gleich sind.</div>
-                    <div style={{ marginTop: 4 }}>
-                      Ab dem 5. Spin steigt deine Jackpot-Chance – jedes Mal um 10%.
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 4,
-                        fontSize: 12,
-                        opacity: 0.8,
-                      }}
-                    >
-                      Nächster Spin: ca. <strong>{nextJackpotChance}%</strong> Jackpot-Chance.
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 3c) Action-Mini-Modus: „Finde die Katze“ */}
-              {startMode === 'action' && miniGame === 'findCat' && preCount === null && (
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: '100%',
-                    gap: 16,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: `repeat(${FIND_CAT_SIZE}, 1fr)`,
-                      gap: 8,
-                    }}
-                  >
-                    {Array.from({ length: FIND_CAT_CELLS }).map((_, idx) => {
-                    const isCat = idx === catPos;
-                    const isHighlighted = isCat && catHighlight !== 'none';
-                    const isRevealed = catRevealed[idx];
-
-                    const showCat = isCat && (catHighlight !== 'none' || isRevealed);
-                    const showCoffee = !isCat && isRevealed;
-
-                    const icon = showCat ? '🐈' : showCoffee ? '☕' : '❓';
-
-                    const bg = !isHighlighted
-                      ? '#020617'
-                      : catHighlight === 'success'
-                      ? '#166534'
-                      : '#14532d';
-
-                    const border = isHighlighted ? '#22c55e' : '#4b5563';
-
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        className="btn"
-                        style={{
-                          width: 64,
-                          height: 64,
-                          borderRadius: 12,
-                          border: `2px solid ${border}`,
-                          background: bg,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: 0,
-                          fontSize: 32,
-                        }}
-                        onClick={() => handleCatClick(idx)}
-                      >
-                        {icon}
-                      </button>
-                    );
-                  })}
-
-                  </div>
-
-                  <div
-                    style={{
-                      opacity: 0.9,
-                      fontSize: 13,
-                      textAlign: 'center',
-                      maxWidth: 360,
-                    }}
-                  >
-                    Finde die versteckte Katze 🐈 zwischen all dem Kaffee ☕.
-                    {catAttempts >= 4 && (
-                      <div style={{ marginTop: 4 }}>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Countdown-Overlay (für beide Modi) */}
+              {/* Countdown-Overlay */}
               {preCount !== null && (
                 <div className="countOverlay">
                   {preCount > 0 ? (
