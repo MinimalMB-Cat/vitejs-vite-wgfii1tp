@@ -12,6 +12,7 @@
   "dependencies": {
     "@vercel/postgres": "^0.10.0",
     "react": "^19.2.0",
+    "pg": "^8.13.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
