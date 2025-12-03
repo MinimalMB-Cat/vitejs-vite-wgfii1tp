@@ -1,6 +1,8 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+// einmal "React" als Wert benutzen, damit TS nicht meckert
+void React;
 
 declare global { interface Window { LZString: any } }
 
@@ -217,6 +219,31 @@ export default function App() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [winTimeMs, setWinTimeMs] = useState<number | null>(null);
 
+    // ---- Highscore-Typen & State ----
+  type HighscoreRow = {
+    id: number;
+    nickname: string;
+    time_ms: number;
+    created_at: string;
+  };
+
+  type HighscoreMode = 'today' | 'date' | 'best';
+
+  const [highscores, setHighscores] = useState<HighscoreRow[]>([]);
+  const [highscoreMode, setHighscoreMode] = useState<HighscoreMode>('today');
+  const [highscoreDate, setHighscoreDate] = useState<string>(() =>
+    new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+  );
+  const [highscoreLoading, setHighscoreLoading] = useState(false);
+  const [highscoreError, setHighscoreError] = useState<string | null>(null);
+
+  // Nickname-Eingabe im Win-Modal
+  const [nicknameInput, setNicknameInput] = useState('');
+  const [scoreSaving, setScoreSaving] = useState(false);
+  const [scoreSaved, setScoreSaved] = useState(false);
+  const [scoreError, setScoreError] = useState<string | null>(null);
+
+
   // Start-/Win-Popups
   const [showStart, setShowStart] = useState(false);
   const [startStage, setStartStage] = useState<number>(0);
@@ -243,7 +270,96 @@ export default function App() {
       return Math.round(p * 100);
     }, [spinCount]);
   
-  // 🐈 „Finde die Katze“-Minispiel
+    // ---- Highscores vom Backend laden ----
+    async function loadHighscores() {
+      try {
+        setHighscoreLoading(true);
+        setHighscoreError(null);
+  
+        const res = await fetch('/api/highscores');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+  
+        const data = (await res.json()) as { rows?: HighscoreRow[] };
+        setHighscores(data.rows ?? []);
+      } catch (err) {
+        console.error('Highscore-Load-Fehler', err);
+        setHighscoreError('Konnte Highscores nicht laden.');
+      } finally {
+        setHighscoreLoading(false);
+      }
+    }
+  
+    // Beim ersten Laden der Seite einmal Highscores holen
+    useEffect(() => {
+      void loadHighscores();
+    }, []);
+  
+    // Gefilterte/Sortierte Highscores für die Anzeige
+    const filteredHighscores = useMemo(() => {
+      const list = [...highscores];
+  
+      const byDate = (row: HighscoreRow, dateStr: string) =>
+        row.created_at.slice(0, 10) === dateStr;
+  
+      let filtered: HighscoreRow[];
+  
+      if (highscoreMode === 'today') {
+        const today = new Date().toISOString().slice(0, 10);
+        filtered = list.filter(r => byDate(r, today));
+      } else if (highscoreMode === 'date') {
+        filtered = list.filter(r => byDate(r, highscoreDate));
+      } else {
+        // 'best' → alle
+        filtered = list;
+      }
+  
+      // Beste Zeiten nach oben
+      filtered.sort((a, b) => a.time_ms - b.time_ms);
+  
+      // Max. 10 anzeigen
+      return filtered.slice(0, 10);
+    }, [highscores, highscoreMode, highscoreDate]);
+  
+    // ---- Highscore per POST speichern ----
+    async function submitHighscore() {
+      const timeToSave = winTimeMs ?? elapsedMs;
+  
+      if (!nicknameInput.trim() || !timeToSave) return;
+  
+      try {
+        setScoreSaving(true);
+        setScoreError(null);
+  
+        const body = {
+          nickname: nicknameInput.trim().slice(0, 20),
+          time_ms: Math.round(timeToSave),
+        };
+  
+        const res = await fetch('/api/highscores', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+  
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+  
+        setScoreSaved(true);
+        // Liste aktualisieren
+        await loadHighscores();
+      } catch (err) {
+        console.error('Highscore-Save-Fehler', err);
+        setScoreError('Konnte Highscore nicht speichern.');
+      } finally {
+        setScoreSaving(false);
+      }
+    }  
+  
+    // 🐈 „Finde die Katze“-Minispiel
   const [catPos, setCatPos] = useState<number>(() => randomCatPos());
   const [catAttempts, setCatAttempts] = useState(0);
   const [catHighlight, setCatHighlight] = useState<'none' | 'hint' | 'success'>('none');
@@ -1540,10 +1656,132 @@ export default function App() {
           border-right: 7px solid transparent;
           border-top: 12px solid #fff;
         }
+
+        .mainLayout{
+          display:flex;
+          gap:20px;
+          align-items:flex-start;
+          justify-content:center;
+          padding:12px 0 24px;
+        }
+        @media (max-width: 960px){
+          .mainLayout{
+            flex-direction:column;
+            align-items:stretch;
+          }
+          .highscorePanel{
+            width:100%;
+          }
+        }
+
+        .highscorePanel{
+          width:260px;
+          background:#020617;
+          border-radius:12px;
+          border:1px solid #1f2937;
+          padding:10px 12px;
+          color:#e5e7eb;
+          box-shadow:0 10px 30px rgba(0,0,0,.35);
+          font-size:13px;
+        }
+        .highscorePanel h3{
+          margin:0 0 6px;
+          font-size:15px;
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+        }
+        .hsTabs{
+          display:flex;
+          gap:6px;
+          margin-bottom:6px;
+          flex-wrap:wrap;
+        }
+        .hsTabBtn{
+          flex:1 0 auto;
+          font-size:11px;
+          padding:4px 8px;
+          border-radius:999px;
+          border:1px solid #374151;
+          background:#020617;
+          color:#e5e7eb;
+          cursor:pointer;
+        }
+        .hsTabBtn.active{
+          background:#4b5563;
+          border-color:#93c5fd;
+        }
+        .hsDateRow{
+          display:flex;
+          align-items:center;
+          gap:6px;
+          font-size:11px;
+          margin-bottom:4px;
+        }
+        .hsDateRow input[type="date"]{
+          flex:1;
+          background:#020617;
+          color:#e5e7eb;
+          border-radius:8px;
+          border:1px solid #374151;
+          padding:4px 6px;
+        }
+
+        .hsList{
+          margin-top:6px;
+          max-height:360px;
+          overflow:auto;
+          padding-right:2px;
+        }
+        .hsList ol{
+          list-style:none;
+          margin:0;
+          padding:0;
+          display:flex;
+          flex-direction:column;
+          gap:4px;
+        }
+        .hsRow{
+          display:flex;
+          justify-content:space-between;
+          align-items:center;
+        }
+        .hsRank{
+          width:18px;
+          opacity:.7;
+        }
+        .hsNick{
+          flex:1;
+          white-space:nowrap;
+          overflow:hidden;
+          text-overflow:ellipsis;
+        }
+        .hsTime{
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+        .hsDate{
+          font-size:11px;
+          opacity:.65;
+        }
+        .hsEmpty{
+          font-size:12px;
+          opacity:.75;
+          margin-top:4px;
+        }
+        .hsError{
+          font-size:12px;
+          color:#fecaca;
+          margin-top:4px;
+        }
+        .hsLoading{
+          font-size:12px;
+          opacity:.8;
+          margin-top:4px;
+        }
       `}</style>
 
       {showWin && <ConfettiCanvas />}
-
+      <div className="mainLayout">
       <div className="board" style={{ width: boardW ? `${boardW}px` : undefined }}>
         <header className="bar">
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -1684,7 +1922,73 @@ export default function App() {
             ))}
           </div>
         )}
-      </div>
+                </div>{/* Ende .board */}
+
+      {/* Rechte Seite: Highscore-Liste */}
+      <aside className="highscorePanel">
+        <h3>
+          <span>🏆 Highscores</span>
+        </h3>
+
+        <div className="hsTabs">
+          <button
+            type="button"
+            className={`hsTabBtn ${highscoreMode === 'today' ? 'active' : ''}`}
+            onClick={() => setHighscoreMode('today')}
+          >
+            Heute
+          </button>
+          <button
+            type="button"
+            className={`hsTabBtn ${highscoreMode === 'best' ? 'active' : ''}`}
+            onClick={() => setHighscoreMode('best')}
+          >
+            Beste Zeit
+          </button>
+        </div>
+
+        <div className="hsDateRow">
+          <span>Datum:</span>
+          <input
+            type="date"
+            value={highscoreDate}
+            onChange={e => {
+              setHighscoreDate(e.target.value);
+              setHighscoreMode('date');
+            }}
+          />
+        </div>
+
+        <div className="hsList">
+          {highscoreLoading && <div className="hsLoading">Lade Highscores…</div>}
+          {highscoreError && <div className="hsError">{highscoreError}</div>}
+
+          {!highscoreLoading && !highscoreError && filteredHighscores.length === 0 && (
+            <div className="hsEmpty">Keine Einträge für diese Auswahl.</div>
+          )}
+
+          {!highscoreLoading && !highscoreError && filteredHighscores.length > 0 && (
+            <ol>
+              {filteredHighscores.map((row, idx) => (
+                <li key={row.id ?? idx}>
+                  <div className="hsRow">
+                    <span className="hsRank">{idx + 1}.</span>
+                    <span className="hsNick">{row.nickname}</span>
+                    <span className="hsTime">{formatTime(row.time_ms)}</span>
+                  </div>
+                  <div className="hsDate">
+                    {new Date(row.created_at).toLocaleString('de-DE', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </aside>
+      </div>{/* Ende .mainLayout */}
 
       {/* Hinweis-Modal */}
       {modal.open && !locked && (
@@ -2199,20 +2503,118 @@ export default function App() {
       )}
 
       {/* Win-Modal */}
-      {showWin && (
-        <div className="modalBackdrop" onClick={() => setShowWin(false)}>
+            {showWin && (
+        <div
+          className="modalBackdrop"
+          onClick={() => {
+            setShowWin(false);
+            setScoreSaved(false);
+            setScoreError(null);
+            setNicknameInput('');
+          }}
+        >
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2 style={{marginTop:0, textAlign:'center'}}>🎉 Glückwunsch du wundervoller Mensch!</h2>
-            <p style={{ opacity:.9, marginTop:8, textAlign:'center' }}>
-              Benötigte Zeit: <strong>{formatTime(winTimeMs ?? elapsedMs)}</strong>
+            <h2 style={{ marginTop: 0, textAlign: 'center' }}>
+              🎉 Glückwunsch du wundervoller Mensch!
+            </h2>
+            <p style={{ opacity: 0.9, marginTop: 8, textAlign: 'center' }}>
+              Benötigte Zeit:{' '}
+              <strong>{formatTime(winTimeMs ?? elapsedMs)}</strong>
             </p>
             {solutionWord && (
-              <p style={{ opacity:.9, marginTop:8, textAlign:'center' }}>
-                Lösungswort: <strong style={{ letterSpacing: '0.06em' }}>{solutionWord}</strong>
+              <p style={{ opacity: 0.9, marginTop: 8, textAlign: 'center' }}>
+                Lösungswort:{' '}
+                <strong style={{ letterSpacing: '0.06em' }}>
+                  {solutionWord}
+                </strong>
               </p>
             )}
-            <div className="actions" style={{justifyContent:'center', marginTop:16}}>
-              <button className="btn" onClick={() => setShowWin(false)}>Schließen</button>
+
+            {/* Neue Nickname-Eingabe */}
+            <div style={{ marginTop: 14, textAlign: 'center' }}>
+              <label style={{ fontSize: 13, opacity: 0.9 }}>
+                Trage deinen Nickname für die Highscore-Liste ein:
+              </label>
+              <div
+                style={{
+                  marginTop: 6,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  justifyContent: 'center',
+                  gap: 8,
+                }}
+              >
+                <input
+                  type="text"
+                  maxLength={20}
+                  value={nicknameInput}
+                  onChange={e => {
+                    setNicknameInput(e.target.value);
+                    setScoreSaved(false);
+                    setScoreError(null);
+                  }}
+                  placeholder="z.B. MinimalMB"
+                  style={{
+                    minWidth: 160,
+                    padding: '6px 8px',
+                    borderRadius: 8,
+                    border: '1px solid #374151',
+                    background: '#020617',
+                    color: '#e5e7eb',
+                  }}
+                />
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={submitHighscore}
+                  disabled={scoreSaving || !nicknameInput.trim()}
+                >
+                  {scoreSaving
+                    ? 'Speichern...'
+                    : scoreSaved
+                    ? 'Gespeichert ✅'
+                    : 'In Highscore speichern'}
+                </button>
+              </div>
+              {scoreError && (
+                <div
+                  style={{
+                    color: '#fecaca',
+                    fontSize: 12,
+                    marginTop: 4,
+                  }}
+                >
+                  {scoreError}
+                </div>
+              )}
+              {scoreSaved && !scoreError && (
+                <div
+                  style={{
+                    color: '#a7f3d0',
+                    fontSize: 12,
+                    marginTop: 4,
+                  }}
+                >
+                  Dein Eintrag ist jetzt rechts in der Highscore-Liste. 🏆
+                </div>
+              )}
+            </div>
+
+            <div
+              className="actions"
+              style={{ justifyContent: 'center', marginTop: 16 }}
+            >
+              <button
+                className="btn"
+                onClick={() => {
+                  setShowWin(false);
+                  setScoreSaved(false);
+                  setScoreError(null);
+                  setNicknameInput('');
+                }}
+              >
+                Schließen
+              </button>
             </div>
           </div>
         </div>
