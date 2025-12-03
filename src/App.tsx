@@ -325,31 +325,29 @@ export default function App() {
     // ---- Highscore per POST speichern ----
     async function submitHighscore() {
       const timeToSave = winTimeMs ?? elapsedMs;
-  
       if (!nicknameInput.trim() || !timeToSave) return;
-  
+    
       try {
         setScoreSaving(true);
         setScoreError(null);
-  
+    
         const body = {
           nickname: nicknameInput.trim().slice(0, 20),
-          time_ms: Math.round(timeToSave),
+          timeMs: Math.round(timeToSave),   // <-- hier: camelCase wie im Backend
         };
-  
+    
         const res = await fetch('/api/highscores', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-  
+    
         if (!res.ok) {
           const text = await res.text().catch(() => '');
           throw new Error(text || `HTTP ${res.status}`);
         }
-  
+    
         setScoreSaved(true);
-        // Liste aktualisieren
         await loadHighscores();
       } catch (err) {
         console.error('Highscore-Save-Fehler', err);
@@ -357,7 +355,7 @@ export default function App() {
       } finally {
         setScoreSaving(false);
       }
-    }  
+    }    
   
     // 🐈 „Finde die Katze“-Minispiel
   const [catPos, setCatPos] = useState<number>(() => randomCatPos());
