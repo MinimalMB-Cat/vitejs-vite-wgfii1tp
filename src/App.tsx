@@ -282,7 +282,6 @@ export default function App() {
   const [scoreSaved, setScoreSaved] = useState(false);
   const [scoreError, setScoreError] = useState<string | null>(null);
   const MIN_NICKNAME_LENGTH = 3;
-  const RELOAD_MARKER_MS = 1;
   const canStart = nicknameInput.trim().length >= MIN_NICKNAME_LENGTH;
   const highscoreSubmittedRef = useRef(false);
 
