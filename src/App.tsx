@@ -39,6 +39,8 @@ type Segment = {
 const N = 12;
 const LS_KEY = 'schwedenraetsel_v1';
 const LS_LOCK_KEY = 'schwedenraetsel_v1_lock';
+const NICKNAME_KEY = 'player_nickname';
+const LS_RUN_KEY = 'schwedenraetsel_v1_run';
 
 // --- Utils ---
 const emptyGrid = (): Cell[][] =>
@@ -237,12 +239,114 @@ export default function App() {
   const [highscoreLoading, setHighscoreLoading] = useState(false);
   const [highscoreError, setHighscoreError] = useState<string | null>(null);
 
-  // Nickname-Eingabe im Win-Modal
-  const [nicknameInput, setNicknameInput] = useState('');
+  // Nickname des Spielers (wird im Start-Dialog gesetzt)
+  const [nicknameInput, setNicknameInput] = useState(() => {
+    try {
+      const raw = localStorage.getItem(LS_RUN_KEY);
+      if (raw) {
+        const data = JSON.parse(raw) as { nickname?: string };
+        if (data.nickname) return data.nickname;
+      }
+    } catch {
+      // ignorieren, falls localStorage nicht geht
+    }
+    return '';
+  });  
+
+  // Nickname persistent speichern (falls möglich)
+  useEffect(() => {
+    try {
+      const trimmed = nicknameInput.trim();
+      if (trimmed.length > 0) {
+        localStorage.setItem(NICKNAME_KEY, trimmed);
+      } else {
+        localStorage.removeItem(NICKNAME_KEY);
+      }
+    } catch {
+      // ignore LS errors
+    }
+  }, [nicknameInput]);
+
   const [scoreSaving, setScoreSaving] = useState(false);
   const [scoreSaved, setScoreSaved] = useState(false);
   const [scoreError, setScoreError] = useState<string | null>(null);
+  const MIN_NICKNAME_LENGTH = 3;
+  const canStart = nicknameInput.trim().length >= MIN_NICKNAME_LENGTH;
+  const highscoreSubmittedRef = useRef(false);
 
+  function markRunStarted(nickname: string) {
+    const nick = nickname.trim();
+    if (!nick) return;
+    try {
+      const payload = {
+        nickname: nick,
+        startedAt: Date.now(),
+      };
+      localStorage.setItem(LS_RUN_KEY, JSON.stringify(payload));
+    } catch {
+      // wenn localStorage nicht geht, ist es halt ohne Reload-Tracking
+    }
+  }
+  
+  function clearRunMarker() {
+    try {
+      localStorage.removeItem(LS_RUN_KEY);
+    } catch {
+      // egal
+    }
+  }
+  
+  // Spezieller Highscore-Eintrag für "Reload" (timeMs = 0)
+  async function submitReloadMarker(nickname: string) {
+    const nick = nickname.trim();
+    if (!nick) return;
+  
+    try {
+      const body = {
+        nickname: nick.slice(0, 20),
+        timeMs: 0, // <== falls dein Backend 'time_ms' erwartet, hier anpassen
+      };
+  
+      const res = await fetch('/api/highscores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+  
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+  
+      await loadHighscores();
+    } catch (err) {
+      console.error('Reload-Marker-Fehler', err);
+    }
+  }
+
+  // Beim ersten Laden prüfen, ob ein Run im letzten Tab "offen" war.
+  // Wenn ja: Reload-Marker speichern und den Marker löschen.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_RUN_KEY);
+      if (!raw) return;
+
+      const data = JSON.parse(raw) as { nickname?: string; startedAt?: number };
+      const nick = data.nickname?.trim();
+      if (!nick) {
+        clearRunMarker();
+        return;
+      }
+
+      void (async () => {
+        await submitReloadMarker(nick);
+        clearRunMarker();
+      })();
+    } catch (err) {
+      console.warn('Konnte Reload-Marker nicht prüfen', err);
+      clearRunMarker();
+    }
+  }, []);
 
   // Start-/Win-Popups
   const [showStart, setShowStart] = useState(false);
@@ -316,7 +420,11 @@ export default function App() {
       }
   
       // Beste Zeiten nach oben
-      filtered.sort((a, b) => a.time_ms - b.time_ms);
+      filtered.sort((a, b) => {
+        const ta = a.time_ms === 0 ? Number.POSITIVE_INFINITY : a.time_ms;
+        const tb = b.time_ms === 0 ? Number.POSITIVE_INFINITY : b.time_ms;
+        return ta - tb;
+      });    
   
       // Max. 10 anzeigen
       return filtered.slice(0, 10);
@@ -324,16 +432,21 @@ export default function App() {
   
     // ---- Highscore per POST speichern ----
     async function submitHighscore() {
+      if (highscoreSubmittedRef.current) return;
+    
       const timeToSave = winTimeMs ?? elapsedMs;
-      if (!nicknameInput.trim() || !timeToSave) return;
+      const nick = nicknameInput.trim();
+    
+      if (!nick || !timeToSave) return;
+      if (scoreSaving || scoreSaved) return;
     
       try {
         setScoreSaving(true);
         setScoreError(null);
     
         const body = {
-          nickname: nicknameInput.trim().slice(0, 20),
-          timeMs: Math.round(timeToSave),   // <-- hier: camelCase wie im Backend
+          nickname: nick.slice(0, 20),
+          time_ms: Math.round(timeToSave),
         };
     
         const res = await fetch('/api/highscores', {
@@ -347,6 +460,7 @@ export default function App() {
           throw new Error(text || `HTTP ${res.status}`);
         }
     
+        highscoreSubmittedRef.current = true;
         setScoreSaved(true);
         await loadHighscores();
       } catch (err) {
@@ -355,7 +469,20 @@ export default function App() {
       } finally {
         setScoreSaving(false);
       }
-    }    
+    }
+
+  useEffect(() => {
+    if (!showWin) return;
+
+    const nick = nicknameInput.trim();
+    const timeToSave = winTimeMs ?? elapsedMs;
+
+    if (!nick || !timeToSave) return;
+    if (scoreSaved || scoreSaving) return;
+
+    void submitHighscore();
+  }, [showWin, nicknameInput, winTimeMs, elapsedMs, scoreSaved, scoreSaving]);
+
   
     // 🐈 „Finde die Katze“-Minispiel
   const [catPos, setCatPos] = useState<number>(() => randomCatPos());
@@ -1018,9 +1145,13 @@ export default function App() {
       setWinTimeMs(elapsedMs);
       setActiveSeg(null);
       setShowWin(true);
+  
+      // Run wurde sauber beendet → Reload-Marker entfernen
+      clearRunMarker();
     }
     prevAllCorrect.current = allCorrect;
   }, [allCorrect, elapsedMs]);
+  
 
   // Tastatur
   useEffect(() => {
@@ -1213,6 +1344,12 @@ export default function App() {
     setStartMode('choose');
     setMiniGame(null);
 
+    highscoreSubmittedRef.current = false;
+    setScoreSaved(false);
+    setScoreSaving(false);
+    setScoreError(null);
+    clearRunMarker();
+
     // Minigames zurücksetzen
     setSpinCount(0);
     setIsSpinning(false);
@@ -1249,6 +1386,13 @@ export default function App() {
     setStartStage(0);
     setStartMode('choose');
     setMiniGame(null);
+
+    highscoreSubmittedRef.current = false;
+    setScoreSaved(false);
+    setScoreSaving(false);
+    setScoreError(null);
+    clearRunMarker();
+  
 
     // Minigames zurücksetzen
     setSpinCount(0);
@@ -1300,6 +1444,7 @@ export default function App() {
   };
 
   function chooseActionMode() {
+    if (!canStart) return;
     setStartMode('action');
     setMiniGame(pickRandomMiniGame());
     setStartStage(0);
@@ -1321,6 +1466,7 @@ export default function App() {
   }
 
   function chooseBoringMode() {
+    if (!canStart) return;
     setStartMode('boring');
     setMiniGame(null);
     setStartStage(0);
@@ -1460,6 +1606,10 @@ export default function App() {
     setTimerStart(Date.now());
     setElapsedMs(0);
     setTimerRunning(true);
+    // Run als "aktiv" markieren (für Reload-Tracking)
+    if (nicknameInput.trim()) {
+    markRunStarted(nicknameInput);
+    }
   }
 
   // --- Speichern/Laden (JSON) ---
@@ -1573,6 +1723,15 @@ export default function App() {
         .btn.active { background:#334155; }
         .btn.danger { background:#3b1f24; border-color:#5b2630; }
         .btn.danger:hover { background:#4a232a; }
+        .btn:disabled {
+          opacity: .45;
+          cursor: not-allowed;
+          background: #111827;
+          border-color: #1f2937;
+        }
+        .btn:disabled:hover {
+          background: #111827;
+        }        
 
         .center { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
         .right { display:flex; align-items:center; gap:8px; }
@@ -1972,7 +2131,9 @@ export default function App() {
                   <div className="hsRow">
                     <span className="hsRank">{idx + 1}.</span>
                     <span className="hsNick">{row.nickname}</span>
-                    <span className="hsTime">{formatTime(row.time_ms)}</span>
+                    <span className="hsTime">
+                    {row.time_ms === 0 ? 'Reload' : formatTime(row.time_ms)}
+                  </span>
                   </div>
                   <div className="hsDate">
                     {new Date(row.created_at).toLocaleString('de-DE', {
@@ -2086,6 +2247,51 @@ export default function App() {
                     gap: 16,
                   }}
                 >
+                  {/* Nickname-Eingabe */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 6,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <label style={{ fontSize: 13, opacity: 0.9 }}>
+                      Dein Nickname:
+                    </label>
+                    <input
+                      type="text"
+                      value={nicknameInput}
+                      maxLength={20}
+                      onChange={e => setNicknameInput(e.target.value)}
+                      placeholder="z.B. MinimalMB"
+                      style={{
+                        minWidth: 220,
+                        padding: '6px 10px',
+                        borderRadius: 8,
+                        border: '1px solid #374151',
+                        background: '#020617',
+                        color: '#e5e7eb',
+                        textAlign: 'center',
+                      }}
+                    />
+                    <div
+                      style={{
+                        fontSize: 11,
+                        marginTop: 4,
+                        opacity: 0.9,
+                        color: canStart ? '#9ca3af' : '#fca5a5',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {canStart
+                        ? 'Dieser Nickname wird für die Highscore-Liste verwendet.'
+                        : `Mindestens ${MIN_NICKNAME_LENGTH} Zeichen benötigt.`}
+                    </div>
+                  </div>
+
+                  {/* Modus-Buttons */}
                   <div
                     style={{
                       display: 'flex',
@@ -2094,13 +2300,22 @@ export default function App() {
                       justifyContent: 'center',
                     }}
                   >
-                    <button className="btn" onClick={chooseActionMode}>
+                    <button
+                      className="btn"
+                      onClick={chooseActionMode}
+                      disabled={!canStart}
+                    >
                       🚀 Action-Mini-Modus
                     </button>
-                    <button className="btn" onClick={chooseBoringMode}>
+                    <button
+                      className="btn"
+                      onClick={chooseBoringMode}
+                      disabled={!canStart}
+                    >
                       😴 Langweiliger Modus
                     </button>
                   </div>
+
                   <div
                     style={{
                       opacity: 0.8,
@@ -2506,10 +2721,8 @@ export default function App() {
           className="modalBackdrop"
           onClick={() => {
             setShowWin(false);
-            setScoreSaved(false);
             setScoreError(null);
-            setNicknameInput('');
-          }}
+          }}          
         >
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h2 style={{ marginTop: 0, textAlign: 'center' }}>
@@ -2528,74 +2741,45 @@ export default function App() {
               </p>
             )}
 
-            {/* Neue Nickname-Eingabe */}
-            <div style={{ marginTop: 14, textAlign: 'center' }}>
-              <label style={{ fontSize: 13, opacity: 0.9 }}>
-                Trage deinen Nickname für die Highscore-Liste ein:
-              </label>
+            {/* Info zur Highscore-Speicherung */}
               <div
-                style={{
-                  marginTop: 6,
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  justifyContent: 'center',
-                  gap: 8,
-                }}
-              >
-                <input
-                  type="text"
-                  maxLength={20}
-                  value={nicknameInput}
-                  onChange={e => {
-                    setNicknameInput(e.target.value);
-                    setScoreSaved(false);
-                    setScoreError(null);
-                  }}
-                  placeholder="z.B. MinimalMB"
-                  style={{
-                    minWidth: 160,
-                    padding: '6px 8px',
-                    borderRadius: 8,
-                    border: '1px solid #374151',
-                    background: '#020617',
-                    color: '#e5e7eb',
-                  }}
-                />
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={submitHighscore}
-                  disabled={scoreSaving || !nicknameInput.trim()}
-                >
-                  {scoreSaving
-                    ? 'Speichern...'
-                    : scoreSaved
-                    ? 'Gespeichert ✅'
-                    : 'In Highscore speichern'}
-                </button>
+              style={{
+                marginTop: 14,
+                textAlign: 'center',
+                fontSize: 13,
+                opacity: 0.9,
+              }}
+            >
+              <div>
+                Dein Nickname:{' '}
+                <strong>{nicknameInput.trim() || 'Unbekannt'}</strong>
               </div>
-              {scoreError && (
-                <div
-                  style={{
-                    color: '#fecaca',
-                    fontSize: 12,
-                    marginTop: 4,
-                  }}
-                >
-                  {scoreError}
-                </div>
-              )}
-              {scoreSaved && !scoreError && (
-                <div
-                  style={{
-                    color: '#a7f3d0',
-                    fontSize: 12,
-                    marginTop: 4,
-                  }}
-                >
-                  Dein Eintrag ist jetzt rechts in der Highscore-Liste. 🏆
-                </div>
-              )}
+              <div style={{ marginTop: 6 }}>
+                {scoreSaving && (
+                  <span>Dein Eintrag wird in die Highscore-Liste eingetragen…</span>
+                )}
+                {!scoreSaving && scoreSaved && !scoreError && (
+                  <span>
+                    Dein Eintrag ist jetzt rechts in der Highscore-Liste. 🏆
+                  </span>
+                )}
+                {!scoreSaving && !scoreSaved && !scoreError && (
+                  <span>
+                    Versuche, deinen Eintrag in der Highscore-Liste zu speichern…
+                  </span>
+                )}
+                {scoreError && (
+                  <span
+                    style={{
+                      color: '#fecaca',
+                      display: 'block',
+                      marginTop: 4,
+                    }}
+                  >
+                    Konnte Highscore nicht speichern.
+                  </span>
+                )}
+              </div>
             </div>
 
             <div
@@ -2606,10 +2790,8 @@ export default function App() {
                 className="btn"
                 onClick={() => {
                   setShowWin(false);
-                  setScoreSaved(false);
                   setScoreError(null);
-                  setNicknameInput('');
-                }}
+                }}                
               >
                 Schließen
               </button>
