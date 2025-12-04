@@ -271,6 +271,7 @@ export default function App() {
   const [scoreSaved, setScoreSaved] = useState(false);
   const [scoreError, setScoreError] = useState<string | null>(null);
   const MIN_NICKNAME_LENGTH = 3;
+  const RELOAD_MARKER_MS = 1;
   const canStart = nicknameInput.trim().length >= MIN_NICKNAME_LENGTH;
   const highscoreSubmittedRef = useRef(false);
 
@@ -296,28 +297,28 @@ export default function App() {
     }
   }
   
-  // Spezieller Highscore-Eintrag für "Reload" (timeMs = 0)
+  // Spezieller Highscore-Eintrag für "Reload"
   async function submitReloadMarker(nickname: string) {
     const nick = nickname.trim();
     if (!nick) return;
-  
+
     try {
       const body = {
         nickname: nick.slice(0, 20),
-        timeMs: 0, // <== falls dein Backend 'time_ms' erwartet, hier anpassen
+        timeMs: RELOAD_MARKER_MS, // <-- Backend erwartet camelCase und > 0
       };
-  
+
       const res = await fetch('/api/highscores', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-  
+
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         throw new Error(text || `HTTP ${res.status}`);
       }
-  
+
       await loadHighscores();
     } catch (err) {
       console.error('Reload-Marker-Fehler', err);
@@ -415,57 +416,57 @@ export default function App() {
       } else if (highscoreMode === 'date') {
         filtered = list.filter(r => byDate(r, highscoreDate));
       } else {
-        // 'best' → alle
         filtered = list;
       }
   
-      // Beste Zeiten nach oben
+      // Beste Zeiten nach oben, Reloads (time_ms <= RELOAD_MARKER_MS) ganz nach unten
       filtered.sort((a, b) => {
-        const ta = a.time_ms === 0 ? Number.POSITIVE_INFINITY : a.time_ms;
-        const tb = b.time_ms === 0 ? Number.POSITIVE_INFINITY : b.time_ms;
+        const ta = a.time_ms <= RELOAD_MARKER_MS ? Number.POSITIVE_INFINITY : a.time_ms;
+        const tb = b.time_ms <= RELOAD_MARKER_MS ? Number.POSITIVE_INFINITY : b.time_ms;
         return ta - tb;
-      });    
+      });
   
-      // Max. 10 anzeigen
       return filtered.slice(0, 10);
-    }, [highscores, highscoreMode, highscoreDate]);
+    }, [highscores, highscoreMode, highscoreDate]);  
   
     // ---- Highscore per POST speichern ----
     async function submitHighscore() {
       if (highscoreSubmittedRef.current) return;
-    
+
       const timeToSave = winTimeMs ?? elapsedMs;
       const nick = nicknameInput.trim();
-    
-      if (!nick || !timeToSave) return;
-      if (scoreSaving || scoreSaved) return;
-    
+
+      if (!nick || timeToSave <= 0) return;
+      if (scoreSaving || scoreSaved || scoreError) return;
+
+      highscoreSubmittedRef.current = true;
+
       try {
         setScoreSaving(true);
         setScoreError(null);
-    
+
         const body = {
           nickname: nick.slice(0, 20),
-          time_ms: Math.round(timeToSave),
+          timeMs: Math.round(timeToSave), // <-- wieder camelCase
         };
-    
+
         const res = await fetch('/api/highscores', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-    
+
         if (!res.ok) {
           const text = await res.text().catch(() => '');
           throw new Error(text || `HTTP ${res.status}`);
         }
-    
-        highscoreSubmittedRef.current = true;
+
         setScoreSaved(true);
         await loadHighscores();
       } catch (err) {
         console.error('Highscore-Save-Fehler', err);
         setScoreError('Konnte Highscore nicht speichern.');
+        highscoreSubmittedRef.current = false; // erlaubt ggf. späteres Retry
       } finally {
         setScoreSaving(false);
       }
@@ -477,12 +478,11 @@ export default function App() {
     const nick = nicknameInput.trim();
     const timeToSave = winTimeMs ?? elapsedMs;
 
-    if (!nick || !timeToSave) return;
-    if (scoreSaved || scoreSaving) return;
+    if (!nick || timeToSave <= 0) return;
+    if (scoreSaved || scoreSaving || scoreError) return;
 
     void submitHighscore();
-  }, [showWin, nicknameInput, winTimeMs, elapsedMs, scoreSaved, scoreSaving]);
-
+  }, [showWin, nicknameInput, winTimeMs, elapsedMs, scoreSaved, scoreSaving, scoreError]);
   
     // 🐈 „Finde die Katze“-Minispiel
   const [catPos, setCatPos] = useState<number>(() => randomCatPos());
@@ -2132,7 +2132,7 @@ export default function App() {
                     <span className="hsRank">{idx + 1}.</span>
                     <span className="hsNick">{row.nickname}</span>
                     <span className="hsTime">
-                    {row.time_ms === 0 ? 'Reload' : formatTime(row.time_ms)}
+                    {row.time_ms <= RELOAD_MARKER_MS ? 'Reload' : formatTime(row.time_ms)}
                   </span>
                   </div>
                   <div className="hsDate">
