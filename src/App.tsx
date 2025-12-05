@@ -2433,8 +2433,16 @@ export default function App() {
                   Wähle deinen Start-Modus:
                 </p>
                 <p style={{ opacity: 0.9, marginTop: 8, textAlign: 'center' }}>
-                  <strong>🚀 Action-Mini-Modus</strong> mit kleinem Start-Minigame oder{' '}
-                  <strong>😴 Langweiliger Modus</strong> mit direktem Countdown.
+                  <strong>🚀 Action-Mini-Modus</strong>oder{' '}
+                  <strong>😴 Langweiliger Modus</strong>
+                </p>
+                <p style={{ opacity: 0.9, marginTop: 8, textAlign: 'center' }}>
+                  <strong>ACHTUNG</strong>
+                </p>
+                <p style={{ opacity: 0.9, marginTop: 8, textAlign: 'center' }}>
+                  Wenn du keine Musik hörst dann bitte reloaden.
+                  Solltest du nach dem klicken auf <strong>Start</strong> deine Seite neu laden,
+                  dann wird das in der Liste gespeichert und es kann zum Ausschluss führen!
                 </p>
               </>
             )}
