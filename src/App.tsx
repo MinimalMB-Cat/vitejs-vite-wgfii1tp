@@ -2222,10 +2222,13 @@ export default function App() {
         </h3>
 
         <div className="hsTabs">
-          <button
+        <button
             type="button"
             className={`hsTabBtn ${highscoreMode === 'today' ? 'active' : ''}`}
-            onClick={() => setHighscoreMode('today')}
+            onClick={() => {
+              setHighscoreMode('today');
+              setHighscoreDate(new Date().toISOString().slice(0, 10)); // Datum auf heute setzen
+            }}
           >
             Heute
           </button>

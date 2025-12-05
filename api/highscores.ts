@@ -61,51 +61,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 // /api/highscores?mode=today
 // /api/highscores?mode=best
 // /api/highscores?mode=date&date=2025-12-02
+// ---- GET: alle Highscores holen ----
+// Das Frontend filtert selbst nach "Heute", Datum & "Beste Zeit"
 async function handleGet(req: VercelRequest, res: VercelResponse) {
-  const modeRaw = req.query.mode;
-  const mode =
-    typeof modeRaw === 'string' ? modeRaw.toLowerCase() : 'today';
-
-  const dateRaw = req.query.date;
-  const dateStr = typeof dateRaw === 'string' ? dateRaw : undefined;
-
   const rows = await withClient(async (client) => {
-    // Beste Zeit (global, unabhängig vom Datum)
-    if (mode === 'best') {
-      const result = await client.query(
-        `
-        SELECT id, nickname, time_ms, created_at
-        FROM highscores
-        ORDER BY time_ms ASC
-        LIMIT 20;
-      `
-      );
-      return result.rows;
-    }
-
-    // Bestimmtes Datum (aus Datepicker)
-    if (mode === 'date' && dateStr) {
-      const result = await client.query(
-        `
-        SELECT id, nickname, time_ms, created_at
-        FROM highscores
-        WHERE created_at::date = $1::date
-        ORDER BY time_ms ASC
-        LIMIT 20;
-      `,
-        [dateStr]
-      );
-      return result.rows;
-    }
-
-    // Standard: "Heute"
     const result = await client.query(
       `
       SELECT id, nickname, time_ms, created_at
       FROM highscores
-      WHERE created_at::date = CURRENT_DATE
-      ORDER BY time_ms ASC
-      LIMIT 20;
+      ORDER BY created_at DESC
+      LIMIT 1000;  -- bei Bedarf anpassen
     `
     );
     return result.rows;
@@ -133,7 +98,7 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
   if (
     typeof timeMs !== 'number' ||
     !Number.isFinite(timeMs) ||
-    timeMs < 0
+    timeMs < 0            // ✅ nur negative Zeiten verbieten, 0 ist für Reload erlaubt
   ) {
     res.status(400).json({ error: 'timeMs fehlt oder ist ungültig.' });
     return;
