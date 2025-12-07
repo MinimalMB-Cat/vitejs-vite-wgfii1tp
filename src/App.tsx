@@ -1928,23 +1928,29 @@ export default function App() {
         }
 
         .hsReloadBtn{
-          background:#020617;
+          background:#0b1120;
           border-radius:999px;
-          border:1px solid #374151;
+          border:1px solid #9ca3af;
           width:24px;
           height:24px;
           display:flex;
           align-items:center;
           justify-content:center;
-          font-size:13px;
+          font-size:24px;
           cursor:pointer;
           padding:0;
+          color:#e5e7eb;
+          box-shadow:0 0 4px rgba(148,163,184,.6);
         }
         .hsReloadBtn:hover{
-          background:#111827;
-          border-color:#4b5563;
+          background:#1f2937;
+          border-color:#e5e7eb;
+          box-shadow:0 0 6px rgba(248,250,252,.9);
         }
-
+        .hsReloadIcon{
+          display:block;
+          transform: translateX(1.4px);  /* nach Geschmack 0.5–2px testen */
+        }
         .hsTabs{
           display:flex;
           gap:6px;
@@ -2244,11 +2250,16 @@ export default function App() {
           <button
             type="button"
             className="hsReloadBtn"
-            onClick={() => void loadHighscores()}
-            title="Liste aktualisieren"
+            onClick={() => {
+              setHsPage(0);
+              setHsSearchResult(null);
+              void loadHighscores();
+            }}
+            title="Highscores aktualisieren"
           >
-            ⟳
+            <span className="hsReloadIcon">⟳</span>
           </button>
+
         </h3>
 
         <div className="hsTabs">
