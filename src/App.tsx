@@ -1907,6 +1907,8 @@ export default function App() {
         }
 
         .highscorePanel{
+          position: relative;
+          z-index: 10003;  /* über dem dunklen Backdrop & Popup */
           width:260px;
           background:#020617;
           border-radius:12px;
@@ -1916,6 +1918,7 @@ export default function App() {
           box-shadow:0 10px 30px rgba(0,0,0,.35);
           font-size:13px;
         }
+        
         .highscorePanel h3{
           margin:0 0 6px;
           font-size:15px;
@@ -1960,7 +1963,6 @@ export default function App() {
         }
         .hsList{
           margin-top:6px;
-          max-height:360px;
           overflow:auto;
           padding-right:2px;
         }
