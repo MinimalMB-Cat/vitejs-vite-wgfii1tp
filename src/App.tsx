@@ -1501,14 +1501,25 @@ export default function App() {
 
   function makeUrl(lock: boolean) {
     const gridForShare = lock
-      ? grid.map(row => row.map(cell => (cell.type === 'empty' ? { ...cell, letter: '' } : { ...cell })))
+      ? grid.map(row =>
+          row.map(cell =>
+            cell.type === 'empty' ? { ...cell, letter: '' } : { ...cell }
+          )
+        )
       : grid;
+  
     const payload = { grid: gridForShare };
-    const base = `${location.origin}${location.pathname}`;
+    const isLocalhost =
+      location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  
+    const base = isLocalhost
+      ? `${location.origin}${location.pathname}`
+      : 'https://minis-kreuzi.vercel.app/';
+  
     const p = encodePayload(payload);
     const suffix = lock ? `#p=${p}&lock=1` : `#p=${p}`;
     return `${base}${suffix}`;
-  }
+  }  
 
   function onCopyLink()       { navigator.clipboard.writeText(makeUrl(false)); alert('Link kopiert! (Editor)'); }
   function onCopySolveOnly()  { navigator.clipboard.writeText(makeUrl(true));  alert('Spiel-Link kopiert! (Nur Lösen)'); }
