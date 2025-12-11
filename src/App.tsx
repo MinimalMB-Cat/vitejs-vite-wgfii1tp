@@ -17,7 +17,7 @@ function decodePayload<T>(s: string): T {
 
 // --- Types ---
 type Dir = 'RIGHT' | 'DOWN';
-export type Variant = 'LEFT_CLUE_RIGHT' | 'ABOVE_CLUE_DOWN' | 'LEFT_CLUE_DOWN' | 'ABOVE_CLUE_RIGHT' | 'LEFT_OF_CLUE_DOWN';
+export type Variant = 'LEFT_CLUE_RIGHT' | 'ABOVE_CLUE_DOWN' | 'LEFT_CLUE_DOWN' | 'ABOVE_CLUE_RIGHT' | 'ABOVE_OF_CLUE_RIGHT' | 'LEFT_OF_CLUE_DOWN';
 
 type Clue = { text: string; variant: Variant; answer?: string };
 type Cell = {
@@ -104,6 +104,11 @@ function buildSegments(grid: Cell[][]): Segment[] {
         case 'LEFT_OF_CLUE_DOWN':     // ✅ neu: Pfeil links vom Hinweis, Lösung ↓
           start = { r, c: c - 1 };
           dir = 'DOWN';
+          break;
+
+        case 'ABOVE_OF_CLUE_RIGHT':
+          start = { r: r - 1, c };
+          dir = 'RIGHT';
           break;
 
         default:
@@ -2443,6 +2448,12 @@ export default function App() {
                   type="radio" name="v" checked={modal.variant === 'ABOVE_CLUE_RIGHT'}
                   onChange={() => setModal(m => ({ ...m, variant: 'ABOVE_CLUE_RIGHT' }))}/>
                 <span>oben Hinweis, Pfeil → (Start unten, dann rechts)</span>
+              </label>
+              <label className="variant">
+                <input
+                  type="radio" name="v" checked={modal.variant === 'ABOVE_OF_CLUE_RIGHT'}
+                  onChange={() =>setModal(m => ({ ...m, variant: 'ABOVE_OF_CLUE_RIGHT' }))}/>
+                <span>über dem Hinweis, Pfeil → (Start oben, dann rechts)</span>
               </label>
               <label className="variant">
                 <input
